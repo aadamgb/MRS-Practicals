@@ -34,6 +34,8 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
 
   // INITIALIZE YOUR KALMAN FILTER HERE
   // SET THE STATE AND THE COVARIANCE MATRICES AS GLOBAL VARIABLES
+  x_.setZero();                    // start with all zeros: position, velocity, acceleration
+  x_cov_.setIdentity();            //  Assume independent states
 }
 
 /**
@@ -103,8 +105,16 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
                      user_params.param6 * (_error_[2] - _prev_error_[2]) / dt;
   
   _prev_error_ = _error_;
+
+  Q_.block<3,3>(0,0) = user_params.param7 * Matrix3d::Identity(); // pos noise 
+  Q_.block<3,3>(3,3) = user_params.param8 * Matrix3d::Identity(); // vel noise 
+  Q_.block<3,3>(6,6) = user_params.param9 * Matrix3d::Identity(); // acc noise
+
+  R_.block<3,3>(0,0) = user_params.param10 * Matrix3d::Identity(); // pos noise
+  R_.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
                                                            
   // LATER, CALL THE lkfPredict() AND lkfCorrect() FUNCTIONS HERE TO OBTAIN THE FILTERED POSITION STATE
+  
   // DON'T FORGET TO INITIALZE THE STATE DURING THE FIRST ITERATION
   
   // | -------------- calculate desired body tilts -------------- |

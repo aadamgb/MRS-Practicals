@@ -77,6 +77,10 @@ private:
 
   // methods for the user
   ActionHandlers_t action_handlers_;
+  Vector9d x_;
+  Matrix9x9d x_cov_;
+  Matrix9x9d Q_ = Matrix9x9d::Zero();
+  Matrix6x6d R_ = Matrix6x6d::Zero();
 };
 
 }  // namespace task_01_controller

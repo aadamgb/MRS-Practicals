@@ -19,8 +19,8 @@ using namespace Eigen;
 std::tuple<Vector9d, Matrix9x9d> Controller::lkfPredict(const Vector9d &x, const Matrix9x9d &x_cov, const Vector3d &input, const double &dt) {
 
   Matrix9x9d A = Matrix9x9d::Zero();
-  Matrix9x9d B = Matrix9x9d::Zero();
-  Matrix9x9d Q = Matrix9x9d::Zero();
+  Matrix9x3d B = Matrix9x3d::Zero();
+  // Matrix9x9d Q = Matrix9x9d::Zero();
 
   Vector9d   new_x;      // the updated state vector, x[k+1]
   Matrix9x9d new_x_cov;  // the updated covariance matrix
@@ -43,12 +43,12 @@ std::tuple<Vector9d, Matrix9x9d> Controller::lkfPredict(const Vector9d &x, const
   B(7, 1) = _g_;                              // tilt_yz (beta_d)
   B(8, 2) = 1.0;                              // acceleration_z
   
-  Q.block<3,3>(0,0) = 1e-6 * Matrix3d::Identity(); // pos noise 
-  Q.block<3,3>(3,3) = 1e-5 * Matrix3d::Identity(); // vel noise 
-  Q.block<3,3>(6,6) = 1e-3 * Matrix3d::Identity(); // acc noise
+  // Q.block<3,3>(0,0) = user_params.param7 * Matrix3d::Identity(); // pos noise 
+  // Q.block<3,3>(3,3) = user_params.param8 * Matrix3d::Identity(); // vel noise 
+  // Q.block<3,3>(6,6) = user_params.param9 * Matrix3d::Identity(); // acc noise
 
   new_x = A * x + B * input;
-  new_x_cov = A * x_cov * A.transpose() + Q;
+  new_x_cov = A * x_cov * A.transpose() + Q_;
 
   // Print the following values into a log file.
   // * the file will be place in "simulation/student_log.txt"
@@ -75,10 +75,22 @@ std::tuple<Vector9d, Matrix9x9d> Controller::lkfCorrect(const Vector9d &x, const
 
   Vector9d   new_x;      // the updated state vector, x[k+1]
   Matrix9x9d new_x_cov;  // the updated covariance matrix
+  Matrix6x9d H = Matrix6x9d::Zero();
+  // Matrix6x6d R = Matrix6x6d::Zero();
+  Matrix9x6d K = Matrix9x6d::Zero();
+
+  H.block<3,3>(0,0) = Matrix3d::Identity(); // px, py, pz
+  H.block<3,3>(3,6) = Matrix3d::Identity(); // ax, ay, az
+
+  // R.block<3,3>(0,0) = user_params.param10 * Matrix3d::Identity(); // pos noise
+  // R.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
+
+
+  K = x_cov * H.transpose() * (H * x_cov * H.transpose() + R_).inverse();
 
   // PUT YOUR CODE HERE
-  // new_x = ...
-  // new_x_cov = ...
+  new_x = x + K * (measurement - H * x);
+  new_x_cov = (Matrix9x9d::Identity() - K * H) * x_cov;
 
   return {new_x, new_x_cov};
 }
