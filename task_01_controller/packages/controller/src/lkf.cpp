@@ -20,8 +20,6 @@ std::tuple<Vector9d, Matrix9x9d> Controller::lkfPredict(const Vector9d &x, const
 
   Matrix9x9d A = Matrix9x9d::Zero();
   Matrix9x3d B = Matrix9x3d::Zero();
-  // Matrix9x9d Q = Matrix9x9d::Zero();
-
   Vector9d   new_x;      // the updated state vector, x[k+1]
   Matrix9x9d new_x_cov;  // the updated covariance matrix
   
@@ -36,16 +34,17 @@ std::tuple<Vector9d, Matrix9x9d> Controller::lkfPredict(const Vector9d &x, const
     A(i + 3, i + 6) = dt;                     // a_k*dt
 
     // a_{k+1} = a_k
-    A(i + 6, i + 6) = 1.0;                    // a_k
+    //  A(i + 6, i + 6) = (i < 2) ? 0.95 : 0.99;  // x,y acc decay: 0.95, z acc decay: 0.99
+      A(i + 6, i + 6) = 1.0;
   }
 
-  B(6, 0) = _g_;                              // tilt_xz (alpha_d)
-  B(7, 1) = _g_;                              // tilt_yz (beta_d)
-  B(8, 2) = 1.0;                              // acceleration_z
-  
-  // Q.block<3,3>(0,0) = user_params.param7 * Matrix3d::Identity(); // pos noise 
-  // Q.block<3,3>(3,3) = user_params.param8 * Matrix3d::Identity(); // vel noise 
-  // Q.block<3,3>(6,6) = user_params.param9 * Matrix3d::Identity(); // acc noise
+  // B.block<3, 3>(6, 0).diagonal() = Vector3d(0.05, 0.05, 0.01);  // Match test B matrix
+  // B(6,0) = 0.05;
+  // B(7,1) = 0.05;
+  // B(8,2) = 0.01;
+  B(6,0) = 1.0;
+  B(7,1) = 1.0;
+  B(8,2) = 1.0;
 
   new_x = A * x + B * input;
   new_x_cov = A * x_cov * A.transpose() + Q_;
@@ -54,9 +53,9 @@ std::tuple<Vector9d, Matrix9x9d> Controller::lkfPredict(const Vector9d &x, const
   // * the file will be place in "simulation/student_log.txt"
   // * use this for ploting in custom scipts, e.g., using Matlab or Python.
   //
-  // std::stringstream string_to_be_logged;
-  // string_to_be_logged << std::fixed << dt << ", " << x[0] << ", " << x[1] << ", " << x[2];
-  // action_handlers_.logLine(string_to_be_logged);
+  std::stringstream string_to_be_logged;
+  string_to_be_logged << std::fixed << dt << ", " << x[0] << ", " << x[1] << ", " << x[2];
+  action_handlers_.logLine(string_to_be_logged);
 
   return {new_x, new_x_cov};
 }
@@ -76,21 +75,25 @@ std::tuple<Vector9d, Matrix9x9d> Controller::lkfCorrect(const Vector9d &x, const
   Vector9d   new_x;      // the updated state vector, x[k+1]
   Matrix9x9d new_x_cov;  // the updated covariance matrix
   Matrix6x9d H = Matrix6x9d::Zero();
-  // Matrix6x6d R = Matrix6x6d::Zero();
   Matrix9x6d K = Matrix9x6d::Zero();
 
   H.block<3,3>(0,0) = Matrix3d::Identity(); // px, py, pz
   H.block<3,3>(3,6) = Matrix3d::Identity(); // ax, ay, az
 
-  // R.block<3,3>(0,0) = user_params.param10 * Matrix3d::Identity(); // pos noise
-  // R.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
 
+  K = x_cov * H.transpose() *
+      (H * x_cov * H.transpose() + R_).ldlt().solve(Matrix6x6d::Identity());
+  // Matrix6x6d S = H * x_cov * H.transpose() + R_;
+  // K = x_cov * H.transpose() * S.ldlt().solve(Matrix6x6d::Identity()); 
 
-  K = x_cov * H.transpose() * (H * x_cov * H.transpose() + R_).inverse();
-
-  // PUT YOUR CODE HERE
+  // // PUT YOUR CODE HERE
   new_x = x + K * (measurement - H * x);
-  new_x_cov = (Matrix9x9d::Identity() - K * H) * x_cov;
+
+
+  // new_x_cov = (Matrix9x9d::Identity() - K * H) * x_cov;
+  // Updated covariance (Joseph form for numerical stability)
+  new_x_cov = (Matrix9x9d::Identity() - K * H) * x_cov * (Matrix9x9d::Identity() - K * H).transpose()
+              + K * R_ * K.transpose();
 
   return {new_x, new_x_cov};
 }

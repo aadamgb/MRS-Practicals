@@ -32,10 +32,20 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
   this->_prev_error_.setZero();
   this->_int_error_.setZero();
 
+  this->first_iteration_ = true;
+
   // INITIALIZE YOUR KALMAN FILTER HERE
   // SET THE STATE AND THE COVARIANCE MATRICES AS GLOBAL VARIABLES
   x_.setZero();                    // start with all zeros: position, velocity, acceleration
   x_cov_.setIdentity();            //  Assume independent states
+  // x_cov_ *= 0.01;
+
+  Q_.block<3,3>(0,0) = user_params.param7 * Matrix3d::Identity(); // pos noise 
+  Q_.block<3,3>(3,3) = user_params.param8 * Matrix3d::Identity(); // vel noise 
+  Q_.block<3,3>(6,6) = user_params.param9 * Matrix3d::Identity(); // acc noise
+
+  R_.block<3,3>(0,0) = user_params.param10 * Matrix3d::Identity(); // pos noise
+  R_.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
 }
 
 /**
@@ -50,8 +60,10 @@ void Controller::reset() {
   this->_int_error_.setZero();
 
   // IT WOULD BE NICE TO RESET THE KALMAN'S STATE AND COVARIANCE
-
+  this->x_.setZero();
+  this->x_cov_.setIdentity();            
   // ALSO, THE NEXT iteration calculateControlSignal() IS GOING TO BE "THE 1ST ITERATION"
+  this->first_iteration_ = true;
 }
 
 /**
@@ -71,8 +83,16 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   // * plotting can be achived using, e.g., the tool called PlotJuggler
   // * try the "plot.sh" script, which will run PlotJuggler
   action_handlers_.plotValue("pos_x", uav_state.position[0]);
+  action_handlers_.plotValue("pos_x_kalman", x_[0]);
+  
+  action_handlers_.plotValue("acc_x", uav_state.acceleration[0]);
+  action_handlers_.plotValue("acc_x_kalman", x_[6]);
+
   action_handlers_.plotValue("pos_y", uav_state.position[1]);
+  action_handlers_.plotValue("pos_y_kalman", x_[1]);
+
   action_handlers_.plotValue("pos_z", uav_state.position[2]);
+  action_handlers_.plotValue("pos_z_kalman", x_[2]);
 
   // publish the following pose as "ROS topic", such that it can be plotted by Rviz
   
@@ -87,7 +107,18 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   action_handlers_.logLine(string_to_be_logged);
 
   // | ---------- calculate the output control signals ---------- |
-  _error_ = control_reference.position - uav_state.position;
+
+  // Initialize Kalman Filter state on first iteration
+  if (first_iteration_) {
+    x_.head<3>() = uav_state.position;                    // Initial position
+    x_.segment<3>(3).setZero();  
+    // x_.segment<3>(3) = uav_state.acceleration * dt;  
+    x_.segment<3>(6) = uav_state.acceleration;            // Initial acceleration
+    first_iteration_ = false;
+  }
+
+  // _error_ = control_reference.position - uav_state.position;
+  _error_ = control_reference.position - x_.head<3>();
 
   _int_error_ += _error_ * dt; 
 
@@ -106,26 +137,41 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   
   _prev_error_ = _error_;
 
+  
+  // | -------------- calculate desired body tilts -------------- |
+  double des_tilt_x = control_x + std::asin(std::clamp(control_reference.acceleration[0] / (control_reference.acceleration[2] + _g_), -1.0, 1.0));
+  double des_tilt_y = control_y + std::asin(std::clamp(control_reference.acceleration[1] / (control_reference.acceleration[2] + _g_), -1.0, 1.0));
+  double des_accel_z = control_z + control_reference.acceleration[2];                                                 // [m/s^2]
+
   Q_.block<3,3>(0,0) = user_params.param7 * Matrix3d::Identity(); // pos noise 
   Q_.block<3,3>(3,3) = user_params.param8 * Matrix3d::Identity(); // vel noise 
   Q_.block<3,3>(6,6) = user_params.param9 * Matrix3d::Identity(); // acc noise
 
   R_.block<3,3>(0,0) = user_params.param10 * Matrix3d::Identity(); // pos noise
   R_.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
-                                                           
+                                                        
   // LATER, CALL THE lkfPredict() AND lkfCorrect() FUNCTIONS HERE TO OBTAIN THE FILTERED POSITION STATE
-  
+  Vector3d input;
+  input << des_tilt_x, des_tilt_y, des_accel_z;
+
+  Vector6d measurement;
+  measurement << uav_state.position[0], uav_state.position[1], uav_state.position[2],
+                uav_state.acceleration[0], uav_state.acceleration[1], uav_state.acceleration[2];
+
+
+
   // DON'T FORGET TO INITIALZE THE STATE DURING THE FIRST ITERATION
-  
-  // | -------------- calculate desired body tilts -------------- |
-  double des_tilt_x = control_x + std::clamp(::asin(control_reference.acceleration[0] / (control_reference.acceleration[2] + _g_)), -1.0, 1.0);    // [rad]
-  double des_tilt_y = control_y + std::clamp(std::asin(control_reference.acceleration[1] / (control_reference.acceleration[2] + _g_)), -1.0, 1.0);    // [rad]
-  double des_accel_z = control_z + control_reference.acceleration[2] + _g_;                                                    // [m/s^2]
+
 
   // | --------------- return the control signals --------------- |
   double   body_thrust;
   Matrix3d desired_orientation;
-  std::tie(body_thrust, desired_orientation) = augmentInputs(des_tilt_x, des_tilt_y, des_accel_z * _mass_, control_reference.heading);
+  std::tie(body_thrust, desired_orientation) = augmentInputs(des_tilt_x, des_tilt_y, (des_accel_z + _g_) * _mass_, control_reference.heading);
+
+  Eigen::Vector3d des_acc = desired_orientation * Eigen::Vector3d(0, 0, body_thrust / _mass_) - Eigen::Vector3d(0, 0, _g_);
+  // std::tie(x_, x_cov_) = lkfPredict(x_, x_cov_, des_acc, dt);
+  std::tie(x_, x_cov_) = lkfPredict(x_, x_cov_, input, dt);
+  std::tie(x_, x_cov_) = lkfCorrect(x_, x_cov_, measurement, dt);
 
   return {body_thrust, desired_orientation};
 };

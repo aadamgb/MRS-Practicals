@@ -1,27 +1,50 @@
-param1: 0.2
-param2: 0.0015
-param3: 0.03
-param4: 4.5
-param5: 0.0005
-param6: 0.85
-param7: 0.0
-param8: 0.0
-param9: 0.0
-param10: 0.0
-param11: 0.0
-param12: 0.0
+# x,y control error
+param1: 0.2         # P
+param2: 0.001      # I
+param3: 0.15         # D
+# z control error
+param4: 4.5         # P
+param5: 0.0005      # I
+# param6: 0.85      # D
+param6: 0.85      # D
+
+# Linear Kalman Filter
+# param7: 0.0000001   # Q pos
+# param8: 0.0000001    # Q vel
+# param9: 5.0      # Q acc
+# param10: 0.0001      # H pos
+# param11: 0.00001      # H acc
+# param12: 4.0
+
+# param7: 1.0    # Q pos - increased for better tracking
+# param8: 1.0        # Q vel - increased for better tracking  
+# param9: 1.0         # Q acc - reduced since test has decaying acc model
+# param10: 1.0      # R pos - matches test noise (0.1/sqrt(3))^2 ≈ 0.0033
+# param11: 1.0      # R acc - matches test noise
+# param12: 4.0        # Control coupling (not used in Kalman test)
+
+# param1: 0.2
+# param2: 0.0 #0.0015
+# param3: 0.03
+# param4: 4.5
+# param5: 0.0 #0.0005
+# param6: 0.85
 
 
-#  Working ones
-# param1: 0.15
-# param2: 0.001
-# param3: 0.035
-# param4: 0.0
-# param5: 0.0
-# param6: 0.0
-# param7: 4.5
-# param8: 0.005
-# param9: 0.8
-# param10: 0.0
-# param11: 0.0
-# param12: 0.0
+param7: 0.000001
+param8: 0.00015
+param9: 1
+param10: 0.004
+param11: 0.002
+param12: 0.01
+
+# Buen punto de partida
+# param7: 0.000005
+# param8: 0.001
+# param9: 0.01
+# param10: 0.0033
+# param11: 0.0033
+# param12: 0.01
+
+
+
