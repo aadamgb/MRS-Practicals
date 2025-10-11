@@ -4,9 +4,9 @@ param2: 0.001      # I
 param3: 0.15         # D
 # z control error
 param4: 4.5         # P
-param5: 0.0005      # I
+param5: 0.001      # I
 # param6: 0.85      # D
-param6: 0.85      # D
+param6: 3.0      # D
 
 # Linear Kalman Filter
 # param7: 0.0000001   # Q pos
@@ -32,19 +32,31 @@ param6: 0.85      # D
 
 
 param7: 0.000001
-param8: 0.00015
+# param8: 0.00015
+param8: 0.001
 param9: 1
 param10: 0.004
 param11: 0.002
 param12: 0.01
 
-# Buen punto de partida
-# param7: 0.000005
-# param8: 0.001
-# param9: 0.01
-# param10: 0.0033
-# param11: 0.0033
+# # 11/10
+# param1: 0.2         # P
+# param2: 0.001      # I
+# param3: 0.15         # D
+# # z control error
+# param4: 4.5         # P
+# param5: 0.0005      # I
+# # param6: 0.85      # D
+# param6: 0.85      # D
+
+# param7: 0.000001
+# param8: 0.00015
+# param9: 1
+# param10: 0.004
+# param11: 0.002
 # param12: 0.01
+
+
 
 
 

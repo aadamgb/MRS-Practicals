@@ -75,13 +75,20 @@ private:
   double _g_;     // the gravitational acceleration
   Vector3d _error_, _prev_error_, _int_error_;
 
+  Matrix9x9d A_;
+  Matrix9x3d B_;
+  Matrix9x9d Q_;
+  Matrix6x9d H_;
+  Matrix9x6d K_;
+  Matrix6x6d R_;
+  Vector9d x_;
+  Matrix9x9d x_cov_;
+
   // methods for the user
   ActionHandlers_t action_handlers_;
 
-  Vector9d x_;
-  Matrix9x9d x_cov_;
-  Matrix9x9d Q_;
-  Matrix6x6d R_;
+
+
 
   bool first_iteration_;
 };
