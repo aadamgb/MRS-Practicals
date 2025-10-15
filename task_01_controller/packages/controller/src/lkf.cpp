@@ -52,14 +52,14 @@ std::tuple<Vector9d, Matrix9x9d> Controller::lkfCorrect(const Vector9d &x, const
 
   // Kalman gain (inverse calculated to be numerically stable)
   K_ = x_cov * H_.transpose() *
-      (H_ * x_cov * H_.transpose() + R_).ldlt().solve(Matrix6x6d::Identity());
+      (H_ * x_cov * H_.transpose() + R_).inverse();
 
   // Updated state prediction 
   new_x = x + K_ * (measurement - H_ * x);
 
   // Updated covariance (Joseph form for numerical stability)
-  new_x_cov = (Matrix9x9d::Identity() - K_ * H_) * x_cov * 
-              (Matrix9x9d::Identity() - K_ * H_).transpose() + K_ * R_ * K_.transpose();
+  new_x_cov = (Matrix9x9d::Identity() - K_ * H_) * x_cov; // * 
+           //   (Matrix9x9d::Identity() - K_ * H_).transpose() + K_ * R_ * K_.transpose();
 
   return {new_x, new_x_cov};
 }

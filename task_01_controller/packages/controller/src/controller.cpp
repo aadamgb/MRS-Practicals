@@ -28,9 +28,9 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
   this->action_handlers_ = action_handlers;
 
   // INITIALIZE YOUR CONTROLLER HERE
-  this->_error_.setZero();
-  this->_prev_error_.setZero();
-  this->_int_error_.setZero();
+  _error_.setZero();
+  _prev_error_.setZero();
+  _int_error_.setZero();
 
   this->first_iteration_ = true;
 
@@ -39,29 +39,25 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
   H_ = Matrix6x9d::Zero();      K_ = Matrix9x6d::Zero();
   Q_ = Matrix9x9d::Identity();  R_ = Matrix6x6d::Identity();
 
+  A_.diagonal().tail<3>()           = Vector3d(0.95, 0.95, 0.99);
   A_.diagonal(3)                    = 0.01 * Vector6d::Ones();
   A_.diagonal(6)                    = 0.5 * 0.01 * 0.01 * Vector3d::Ones();
-  A_.diagonal().tail<3>()           = Vector3d(0.95, 0.95, 0.99);
 
-  // B_.block<3, 3>(6, 0).diagonal()   = Vector3d::Ones();
-  // B_.block<3, 3>(6, 0).diagonal()   = _g_ * Vector3d(0.05, 0.05, 0.01);
-  B_.block<3, 3>(6, 0).diagonal()   = Vector3d(0.05, 0.05, 0.01);
+  B_.block<3, 3>(6, 0).diagonal()   = _g_ * Vector3d(0.05, 0.05, 0.01);
   
   H_.block<3,3>(0,0).diagonal()     = Vector3d::Ones();           // px, py, pz
   H_.block<3,3>(3,6).diagonal()     = Vector3d::Ones();           // ax, ay, az
 
-  Q_.block<3,3>(0,0) = user_params.param7 * Matrix3d::Identity(); // pos noise 
-  Q_.block<3,3>(3,3) = user_params.param8 * Matrix3d::Identity(); // vel noise 
-  Q_.block<3,3>(6,6) = user_params.param9 * Matrix3d::Identity(); // acc noise
+  Q_.block<3,3>(0,0) =   0.001 * Matrix3d::Identity();            // pos noise 
+  Q_.block<3,3>(3,3) = 0.001 * Matrix3d::Identity();              // vel noise 
+  Q_.block<3,3>(6,6) = 1.0 * Matrix3d::Identity();                // acc noise
 
-  R_.block<3,3>(0,0) = user_params.param10 * Matrix3d::Identity(); // pos noise
-  R_.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
-  
+  R_.block<3,3>(0,0) = 1.0 * Matrix3d::Identity();                // pos noise
+  R_.block<3,3>(3,3) = 1.0 * Matrix3d::Identity();                // acc noise
 
   // SET THE STATE AND THE COVARIANCE MATRICES AS GLOBAL VARIABLES
   x_.setZero();                                                   // Start with all zeros
-  x_cov_ = 0.01 * Matrix9x9d::Identity();                                           // Assume independent states
-  x_cov_.block<3,3>(3,3) = 1.0 * Matrix3d::Identity(); 
+  x_cov_.setIdentity();
 }
 
 /**
@@ -71,14 +67,13 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
 void Controller::reset() {
 
   // IT WOULD BE GOOD TO RESET THE PID'S INTEGRALS
-  this->_error_.setZero();
-  this->_prev_error_.setZero();
-  this->_int_error_.setZero();
+  _error_.setZero();
+  _prev_error_.setZero();
+  _int_error_.setZero();
 
   // IT WOULD BE NICE TO RESET THE KALMAN'S STATE AND COVARIANCE
-  this->x_.setZero();
-  this->x_cov_.setIdentity();
-  // x_cov_.block<3,3>(3,3) = 0.1 * Matrix3d::Identity(); // allow vel to adapt
+  x_.setZero();
+  x_cov_.setIdentity();
 
   // ALSO, THE NEXT iteration calculateControlSignal() IS GOING TO BE "THE 1ST ITERATION"
   this->first_iteration_ = true;
@@ -126,14 +121,13 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   // * the file will be place in "simulation/student_log.txt"
   // * use this for ploting in custom scipts, e.g., using Matlab or Python.
   
-  std::stringstream string_to_be_logged;
-  string_to_be_logged << std::fixed << dt << ", " << uav_state.position[0] << ", " << uav_state.position[1] << ", " << uav_state.position[2];
-  action_handlers_.logLine(string_to_be_logged);
+  // std::stringstream string_to_be_logged;
+  // string_to_be_logged << std::fixed << dt << ", " << uav_state.position[0] << ", " << uav_state.position[1] << ", " << uav_state.position[2];
+  // action_handlers_.logLine(string_to_be_logged);
 
   //  | --- Initialize Kalman Filter state on first iteration --- |
   if (first_iteration_) {
     x_.head<3>() = uav_state.position;                    // Initial position
-    x_.segment<3>(3).setZero();  // or = uav_state.velocity if available
     x_.segment<3>(6) = uav_state.acceleration;            // Initial acceleration
     first_iteration_ = false;
   }
@@ -181,8 +175,7 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   input << des_tilt_x, des_tilt_y, des_accel_z;
 
   Vector6d measurement;
-  measurement << uav_state.position[0], uav_state.position[1], uav_state.position[2],
-                uav_state.acceleration[0], uav_state.acceleration[1], uav_state.acceleration[2];
+  measurement << uav_state.position, uav_state.acceleration;
 
   // | --------------- Return the control signals --------------- |
   double   body_thrust;
@@ -190,8 +183,6 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   std::tie(body_thrust, desired_orientation) = augmentInputs(des_tilt_x, des_tilt_y, (des_accel_z + _g_) * _mass_, control_reference.heading);
 
   // | ------------ Future state estimation with LKF ------------ |
-  Eigen::Vector3d des_acc = desired_orientation * Eigen::Vector3d(0, 0, body_thrust / _mass_) - Eigen::Vector3d(0, 0, _g_);
-  // std::tie(x_, x_cov_) = lkfPredict(x_, x_cov_, des_acc, dt);
   std::tie(x_, x_cov_) = lkfPredict(x_, x_cov_, input, dt);
   std::tie(x_, x_cov_) = lkfCorrect(x_, x_cov_, measurement, dt);
 
