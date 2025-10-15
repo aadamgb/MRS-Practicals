@@ -87,9 +87,6 @@ private:
   // methods for the user
   ActionHandlers_t action_handlers_;
 
-
-
-
   bool first_iteration_;
 };
 

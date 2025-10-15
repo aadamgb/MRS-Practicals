@@ -37,18 +37,18 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
   // INITIALIZE YOUR KALMAN FILTER HERE
   A_ = Matrix9x9d::Identity();  B_ = Matrix9x3d::Zero(); 
   H_ = Matrix6x9d::Zero();      K_ = Matrix9x6d::Zero();
+  Q_ = Matrix9x9d::Identity();  R_ = Matrix6x6d::Identity();
 
   A_.diagonal(3)                    = 0.01 * Vector6d::Ones();
   A_.diagonal(6)                    = 0.5 * 0.01 * 0.01 * Vector3d::Ones();
-  // A_.diagonal().tail<3>()           = Vector3d(0.95, 0.95, 0.99);
+  A_.diagonal().tail<3>()           = Vector3d(0.95, 0.95, 0.99);
 
-  B_.block<3, 3>(6, 0).diagonal()   = Vector3d::Ones();
-  // B_.block<3, 3>(6, 0).diagonal()   = Vector3d(0.05, 0.05, 0.01);
+  // B_.block<3, 3>(6, 0).diagonal()   = Vector3d::Ones();
+  // B_.block<3, 3>(6, 0).diagonal()   = _g_ * Vector3d(0.05, 0.05, 0.01);
+  B_.block<3, 3>(6, 0).diagonal()   = Vector3d(0.05, 0.05, 0.01);
   
-
   H_.block<3,3>(0,0).diagonal()     = Vector3d::Ones();           // px, py, pz
   H_.block<3,3>(3,6).diagonal()     = Vector3d::Ones();           // ax, ay, az
-
 
   Q_.block<3,3>(0,0) = user_params.param7 * Matrix3d::Identity(); // pos noise 
   Q_.block<3,3>(3,3) = user_params.param8 * Matrix3d::Identity(); // vel noise 
@@ -56,11 +56,12 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
 
   R_.block<3,3>(0,0) = user_params.param10 * Matrix3d::Identity(); // pos noise
   R_.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
+  
 
   // SET THE STATE AND THE COVARIANCE MATRICES AS GLOBAL VARIABLES
   x_.setZero();                                                   // Start with all zeros
-  x_cov_.setIdentity();                                           // Assume independent states
-
+  x_cov_ = 0.01 * Matrix9x9d::Identity();                                           // Assume independent states
+  x_cov_.block<3,3>(3,3) = 1.0 * Matrix3d::Identity(); 
 }
 
 /**
@@ -77,7 +78,7 @@ void Controller::reset() {
   // IT WOULD BE NICE TO RESET THE KALMAN'S STATE AND COVARIANCE
   this->x_.setZero();
   this->x_cov_.setIdentity();
-  x_cov_.block<3,3>(3,3) = 5.0 * Matrix3d::Identity(); // allow vel to adapt
+  // x_cov_.block<3,3>(3,3) = 0.1 * Matrix3d::Identity(); // allow vel to adapt
 
   // ALSO, THE NEXT iteration calculateControlSignal() IS GOING TO BE "THE 1ST ITERATION"
   this->first_iteration_ = true;
@@ -105,6 +106,9 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   action_handlers_.plotValue("acc_x", uav_state.acceleration[0]);
   action_handlers_.plotValue("acc_x_kalman", x_[6]);
 
+  action_handlers_.plotValue("acc_z", uav_state.acceleration[2]);
+  action_handlers_.plotValue("acc_z_kalman", x_[8]);
+
   action_handlers_.plotValue("pos_y", uav_state.position[1]);
   action_handlers_.plotValue("pos_y_kalman", x_[1]);
 
@@ -129,6 +133,7 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   //  | --- Initialize Kalman Filter state on first iteration --- |
   if (first_iteration_) {
     x_.head<3>() = uav_state.position;                    // Initial position
+    x_.segment<3>(3).setZero();  // or = uav_state.velocity if available
     x_.segment<3>(6) = uav_state.acceleration;            // Initial acceleration
     first_iteration_ = false;
   }
