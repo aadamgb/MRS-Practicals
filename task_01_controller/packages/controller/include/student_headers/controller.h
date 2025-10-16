@@ -84,10 +84,12 @@ private:
   Vector9d x_;
   Matrix9x9d x_cov_;
 
+  bool first_iteration_;
+  
   // methods for the user
   ActionHandlers_t action_handlers_;
 
-  bool first_iteration_;
+
 };
 
 }  // namespace task_01_controller

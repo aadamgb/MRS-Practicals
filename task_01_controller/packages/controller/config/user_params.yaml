@@ -1,12 +1,10 @@
-# x,y control error
-param1: 0.2           # P
-param2: 0.001         # I
-param3: 0.15          # D
-# z control error
-param4: 4.5           # P
-param5: 0.0015        # I
-# param6: 0.85        # D
-param6: 3.0           # D
+# Controller params
+param1: 0.25             # P_xy
+param2: 0.001           # I_xy
+param3: 0.15            # D_xy
+param4: 4.5             # P_z
+param5: 0.0015          # I_z
+param6: 0.85             # D_z
 
 # Linear Kalman Filter
 param7: 0.01            # Q pos
@@ -14,23 +12,9 @@ param8: 0.01            # Q vel
 param9: 1.0             # Q acc
 param10: 1.0            # R pos
 param11: 1.0            # R acc
+
 param12: 0.0            # Unused
 
-
-# param7: 0.000001        # Q pos
-# param8: 0.001           # Q vel
-# param9: 1.0             # Q acc
-# param10: 0.004          # R pos
-# param11: 0.002          # R acc
-# param12: 0.08
-
-# Linear Kalman Filter
-# param7: 0.0000001   # Q pos
-# param8: 0.0000001    # Q vel
-# param9: 5.0      # Q acc
-# param10: 0.0001      # H pos
-# param11: 0.00001      # H acc
-# param12: 4.0
 
 
 

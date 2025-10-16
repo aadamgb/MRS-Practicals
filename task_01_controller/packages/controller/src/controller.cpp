@@ -45,18 +45,18 @@ void Controller::init(const double mass, const UserParams_t user_params, const d
 
   B_.block<3, 3>(6, 0).diagonal()   = _g_ * Vector3d(0.05, 0.05, 0.01);
   
-  H_.block<3,3>(0,0).diagonal()     = Vector3d::Ones();           // px, py, pz
-  H_.block<3,3>(3,6).diagonal()     = Vector3d::Ones();           // ax, ay, az
+  H_.block<3,3>(0,0).diagonal()     = Vector3d::Ones();                         // px, py, pz
+  H_.block<3,3>(3,6).diagonal()     = Vector3d::Ones();                         // ax, ay, az
 
-  Q_.block<3,3>(0,0) =   0.001 * Matrix3d::Identity();            // pos noise 
-  Q_.block<3,3>(3,3) = 0.001 * Matrix3d::Identity();              // vel noise 
-  Q_.block<3,3>(6,6) = 1.0 * Matrix3d::Identity();                // acc noise
+  Q_.block<3,3>(0,0)                = 0.001 * Matrix3d::Identity();             // pos process noise 
+  Q_.block<3,3>(3,3)                = 0.001 * Matrix3d::Identity();              // vel process noise 
+  Q_.block<3,3>(6,6)                = 1.0 * Matrix3d::Identity();                // acc process noise
 
-  R_.block<3,3>(0,0) = 1.0 * Matrix3d::Identity();                // pos noise
-  R_.block<3,3>(3,3) = 1.0 * Matrix3d::Identity();                // acc noise
+  R_.block<3,3>(0,0)                = 1.0 * Matrix3d::Identity();                // pos measurement noise
+  R_.block<3,3>(3,3)                = 1.0 * Matrix3d::Identity();                // acc measurement noise
 
   // SET THE STATE AND THE COVARIANCE MATRICES AS GLOBAL VARIABLES
-  x_.setZero();                                                   // Start with all zeros
+  x_.setZero();                                                  
   x_cov_.setIdentity();
 }
 
@@ -98,12 +98,6 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   action_handlers_.plotValue("pos_x", uav_state.position[0]);
   action_handlers_.plotValue("pos_x_kalman", x_[0]);
   
-  action_handlers_.plotValue("acc_x", uav_state.acceleration[0]);
-  action_handlers_.plotValue("acc_x_kalman", x_[6]);
-
-  action_handlers_.plotValue("acc_z", uav_state.acceleration[2]);
-  action_handlers_.plotValue("acc_z_kalman", x_[8]);
-
   action_handlers_.plotValue("pos_y", uav_state.position[1]);
   action_handlers_.plotValue("pos_y_kalman", x_[1]);
 
@@ -114,6 +108,13 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   action_handlers_.plotValue("vel_y_kalman", x_[4]);
   action_handlers_.plotValue("vel_z_kalman", x_[5]);
 
+  action_handlers_.plotValue("acc_x", uav_state.acceleration[0]);
+  action_handlers_.plotValue("acc_x_kalman", x_[6]);
+  
+  action_handlers_.plotValue("acc_z", uav_state.acceleration[2]);
+  action_handlers_.plotValue("acc_z_kalman", x_[8]);
+
+
   // publish the following pose as "ROS topic", such that it can be plotted by Rviz
   action_handlers_.visualizePose("uav_pose_offset", uav_state.position[0], uav_state.position[1], uav_state.position[2] + 1.0, uav_state.heading);
 
@@ -121,11 +122,11 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   // * the file will be place in "simulation/student_log.txt"
   // * use this for ploting in custom scipts, e.g., using Matlab or Python.
   
-  // std::stringstream string_to_be_logged;
-  // string_to_be_logged << std::fixed << dt << ", " << uav_state.position[0] << ", " << uav_state.position[1] << ", " << uav_state.position[2];
-  // action_handlers_.logLine(string_to_be_logged);
+  std::stringstream string_to_be_logged;
+  string_to_be_logged << std::fixed << dt << ", " << uav_state.position[0] << ", " << uav_state.position[1] << ", " << uav_state.position[2];
+  action_handlers_.logLine(string_to_be_logged);
 
-  //  | --- Initialize Kalman Filter state on first iteration --- |
+  //  | --- Initialize State on first iteration --- |
   if (first_iteration_) {
     x_.head<3>() = uav_state.position;                    // Initial position
     x_.segment<3>(6) = uav_state.acceleration;            // Initial acceleration
@@ -159,7 +160,7 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   double des_tilt_y = control_y + 
   std::asin(std::clamp(control_reference.acceleration[1] / (control_reference.acceleration[2] + _g_), -1.0, 1.0));
   
-  double des_accel_z = control_z + control_reference.acceleration[2];                                                 // [m/s^2]
+  double des_accel_z = control_z + control_reference.acceleration[2];                                                 
 
 
   // | ------ Tune process and measurment noise covariance  ------ |
@@ -171,10 +172,8 @@ std::pair<double, Matrix3d> Controller::calculateControlSignal(const UAVState_t 
   R_.block<3,3>(3,3) = user_params.param11 * Matrix3d::Identity(); // acc noise
                                                         
   // | ------------ Create input and measurment vectors ----------- |
-  Vector3d input;
+  Vector3d input;   Vector6d measurement;
   input << des_tilt_x, des_tilt_y, des_accel_z;
-
-  Vector6d measurement;
   measurement << uav_state.position, uav_state.acceleration;
 
   // | --------------- Return the control signals --------------- |
