@@ -46,8 +46,6 @@ MOUNTS=(
 
   # mount the MRS shell additions into the container, DO NOT MODIFY
   "type=bind" "$MOUNT_PATH" "/opt/mrs/host"
-  
-  "type=bind" "$HOME/.Xauthority" "/home/$USER/.Xauthority"
 )
 
 ## | ------------------ advanced user config ------------------ |
