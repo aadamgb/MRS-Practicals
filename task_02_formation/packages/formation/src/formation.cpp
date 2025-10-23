@@ -107,7 +107,9 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
   // visualize ground grid (optional)
   action_handlers_.visualizeCube(Position_t{0, 0, 0}, Color_t{0.0, 0.0, 1.0, 0.05}, 1.0);
 
-  // | ------------- calculate cost matrix (start-goal distances) ------------ |
+  // | --- Step 1: Assign optimally goals to starts with the Hungarian Algorithm --- |
+
+  // 1.1 Calculate cost matrix (Eculidean distance between start and goal 
   std::vector<std::vector<double>> cost(n_uavs, std::vector<double>(n_uavs));
   for (int i = 0; i < n_uavs; i++) {
     for (int j = 0; j < n_uavs; j++) {
@@ -115,32 +117,30 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
     }
   }
 
-  // | ------------- Assign optimal goals using Hungarian Algorithm ------------ |
+  // 1.2 Apply the Hungarian algorithm
   std::vector<int> assignment = hungarianSolve(cost);
 
-  // | --------------- Initialize A* and planning parameters -------------- |
-  const double resolution = 0.6;
-  astar::Astar astar(resolution);
-  std::set<astar::Cell> obstacles;  // shared obstacle map
-  double separation = 1.2;          // minimum distance between paths
+  // | --- Step 2: Use A* to find paths from starts to goals --- |
 
-  // | --------------- Store paths for each UAV -------------- |
+  // 2.1 Initialize the algorithm and paths vectop
+  const double resolution = 0.6;                         // grid resolution
+  double separation = 1.2;                               // minimum distance between paths
+  astar::Astar astar(resolution);                        // A* init
+  std::set<astar::Cell> obstacles;                       // shared obstacle map
   std::vector<std::vector<Eigen::Vector3d>> paths;
 
-  // | --------------- Plan for each UAV sequentially -------------- |
-  // for each UAV
+  // 2.2 Plan paths for each UAV sequentially 
   for (int i = 0; i < n_uavs; i++) {
-
     std::vector<Eigen::Vector3d> path;
+    astar::Position start(initial_states[i][0], 
+                          initial_states[i][1], 
+                          initial_states[i][2]);
+    astar::Position goal(final_states[assignment[i]][0], 
+                         final_states[assignment[i]][1], 
+                         final_states[assignment[i]][2]);
 
-    astar::Position start(initial_states[i][0], initial_states[i][1], initial_states[i][2]);
-    astar::Position goal(final_states[assignment[i]][0], final_states[assignment[i]][1], final_states[assignment[i]][2]);
-
-    // | ---------- Build temporary obstacle set for this planning ---------- |
+    // 2.3 Mark the other starts and goals as temporary obstacles
     std::set<astar::Cell> temp_obstacles = obstacles;
-
-    // Add all *other* UAVs' start positions as obstacles
-    // Add starts and goals of *future* UAVs as obstacles
     for (int j = 0; j < n_uavs; j++) {
       if (j == i) continue;
       bool is_future = j > i;
@@ -159,38 +159,28 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
           }
     }
 
-    // Plan path with both static + temporary obstacles
+    // 2.4 Plan path with fixed + temporary obstacles
     std::optional<std::list<astar::Position>> path_opt = astar.plan(start, goal, temp_obstacles);
-
     if (path_opt) {
       for (const astar::Position &pos : path_opt.value()) {
-        path.push_back(Eigen::Vector3d(pos.x(), pos.y(), pos.z()));
+        // Pushing found path to paths vector
+        path.push_back(Eigen::Vector3d(pos.x(), pos.y(), pos.z()));     
 
-        // Reserve region for next UAVs
-        astar::Cell center = astar.toGrid(pos.x(), pos.y(), pos.z());
+        // Inflate current path and mark it as obstacle for next planning iterations
+        astar::Cell center = astar.toGrid(pos.x(), pos.y(), pos.z());   
         int expand_cells = static_cast<int>(std::ceil(separation / resolution));
         for (int dx = -expand_cells; dx <= expand_cells; dx++) {
           for (int dy = -expand_cells; dy <= expand_cells; dy++) {
             for (int dz = -expand_cells; dz <= expand_cells; dz++) {
               astar::Cell neighbor(center.x() + dx, center.y() + dy, center.z() + dz);
-              obstacles.insert(neighbor);
+              obstacles.insert(neighbor);                              
             }
           }
         }
-
-      //   // Visualize reserved region
-      //   action_handlers_.visualizeCube(
-      //     Position_t{pos.x(), pos.y(), pos.z()},
-      //     Color_t{0.0, 0.8, 0.0, 0.4},
-      //     separation
-      //   );
       }
     } else {
       printf("[WARN] Path not found for UAV %d\n", i);
-      path.push_back(initial_states[i]);
-      path.push_back(final_states[assignment[i]]);
     }
-
     paths.push_back(path);
   }
 
