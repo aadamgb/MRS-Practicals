@@ -7,140 +7,62 @@ namespace task_02_formation
 // |                    the library interface                   |
 // --------------------------------------------------------------
 
-bool bpm_dfs(int row, std::vector<std::vector<int>>& adj, std::vector<bool>& visited, std::vector<int>& match) {
-  for (int col : adj[row]) {
-    if (!visited[col]) {
-      visited[col] = true;
-      
-      if (match[col] == -1 || bpm_dfs(match[col], adj, visited, match)) {
-        match[col] = row;
-        return true;
-      }
-
-    }
-  }
-  return false;
-}
-
-
-std::vector<Eigen::Vector2d> find_independent_zeros(std::vector<std::vector<double>>& cost) {
+std::vector<int> hungarianSolve(const std::vector<std::vector<double>> &cost) {
   int n = cost.size();
+  int m = cost[0].size();
+  int dim = std::max(n, m);
+  std::vector<std::vector<double>> a(dim, std::vector<double>(dim, 0.0));
 
-  // Build adjacency list of zero positions
-  std::vector<std::vector<int>> adj(n);
-  for (int i = 0; i < n; i++) {
-    for (int j = 0; j < n; j++) {
-      if (fabs(cost[i][j]) < 1e-9) adj[i].push_back(j);
-    }
-  }
+  for (int i = 0; i < n; ++i)
+    for (int j = 0; j < m; ++j)
+      a[i][j] = cost[i][j];
 
-  std::vector<int> match_col(n, -1);
-  for (int row = 0; row < n; row++) {
-    std::vector<bool> visited(n, false);
-    bpm_dfs(row, adj, visited, match_col);
-  }
+  std::vector<double> u(dim + 1), v(dim + 1);
+  std::vector<int> p(dim + 1), way(dim + 1);
 
-  std::vector<Eigen::Vector2d> independent_zeros;
-  for (int j = 0; j < n; ++j) {
-    if (match_col[j] != -1) {
-      independent_zeros.push_back(Eigen::Vector2d(match_col[j], j));
-    }
-  }
-
-  return independent_zeros;
-}
-
-std::vector<int> Hungarian(std::vector<std::vector<double>>& cost) {
-  int n = cost.size();
-  // | ---- Step 1: Row and column reduction ---- |
-    // Step 1: Row reduction
-    for (int i = 0; i < n; i++) {
-        double min_val = *std::min_element(cost[i].begin(), cost[i].end());
-        for (int j = 0; j < n; j++) {
-            cost[i][j] -= min_val;
-        }
-    }
-    
-    // Step 1: Column reduction
-    for (int j = 0; j < n; j++) {
-        double min_val = cost[0][j];
-        for (int i = 1; i < n; i++) {
-            if (cost[i][j] < min_val) min_val = cost[i][j];
-        }
-        for (int i = 0; i < n; i++) {
-            cost[i][j] -= min_val;
-        }
-    }
-
-
-  // | --- Step 2: Find the solution ------------ |
-  while(true) {
-    auto zeros  = find_independent_zeros(cost);
-  if ((int)zeros.size() == n) {
-    // Final assignment
-    std::vector<int> assignment(n, -1);
-    for (auto& z : zeros) {
-      assignment[z[0]] = z[1];
-    }
-    return assignment;
-  }
-
-    std::vector<bool> covered_rows(n, false);
-    std::vector<bool> covered_cols(n, false);
-
-    // Step 3: Cover all rows without assigned zeros
-    for (int i = 0; i < n; i++){
-      bool assigned = false;
-      for (auto& z : zeros) {
-        if ((int)z[0] == i) assigned = true;
-      }
-      if (!assigned) covered_rows[i] = true;
-    }
-
-    
-    // Step 4: Iteratively mark columns and 
-    bool changed;
+  for (int i = 1; i <= dim; ++i) {
+    p[0] = i;
+    int j0 = 0;
+    std::vector<double> minv(dim + 1, std::numeric_limits<double>::infinity());
+    std::vector<char> used(dim + 1, false);
     do {
-      changed = false;
-      for (int i = 0; i < n; i++) {
-        if (covered_rows[i]) {
-          for ( int j = 0; j < n; j++) {
-            if (fabs(cost[i][j]) < 1e-9 && !covered_cols[j]) {
-              covered_cols[j] = true;
-              for (auto& z : zeros) {
-                if ((int)z[1] == j && !covered_rows[(int)z[0]]) {
-                  covered_rows[(int)z[0]] = true;
-                  changed = true;
-                }
-              }
-            }
-          }
+      used[j0] = true;
+      int i0 = p[j0], j1 = 0;
+      double delta = std::numeric_limits<double>::infinity();
+      for (int j = 1; j <= dim; ++j) {
+        if (used[j]) continue;
+        double cur = a[i0 - 1][j - 1] - u[i0] - v[j];
+        if (cur < minv[j]) {
+          minv[j] = cur;
+          way[j] = j0;
+        }
+        if (minv[j] < delta) {
+          delta = minv[j];
+          j1 = j;
         }
       }
-    } while (changed);
-
-    // Step 5: Find the mimimum uncoverd value
-    double min_uncovered = std::numeric_limits<double>::max();
-    for (int i = 0; i < n; i++) {
-      if (!covered_rows[i]) {
-        for (int j = 0; j < n; j++) {
-          if (!covered_cols[j] && cost[i][j] < min_uncovered) {
-            min_uncovered = cost[i][j];
-          }
+      for (int j = 0; j <= dim; ++j) {
+        if (used[j]) {
+          u[p[j]] += delta;
+          v[j] -= delta;
+        } else {
+          minv[j] -= delta;
         }
       }
-    }
-
-    // Step 6: Adjust cost matrix
-    for (int i = 0; i < n; i++) {
-      for (int j = 0; j < n; j++) {
-        if (!covered_rows[i] && !covered_cols[j])
-          cost[i][j] -= min_uncovered;
-        else if (covered_rows[i] && covered_cols[j])
-          cost[i][j] += min_uncovered;
-      }
-    }
+      j0 = j1;
+    } while (p[j0] != 0);
+    do {
+      int j1 = way[j0];
+      p[j0] = p[j1];
+      j0 = j1;
+    } while (j0);
   }
+
+  std::vector<int> assignment(n, -1);
+  for (int j = 1; j <= dim; ++j)
+    if (p[j] <= n && j <= m)
+      assignment[p[j] - 1] = j - 1;
+  return assignment;
 }
 
 /* init() //{ */
@@ -199,7 +121,7 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(co
     }
   }
 
-  std::vector<int> assignment = Hungarian(cost);
+  std::vector<int> assignment = hungarianSolve(cost);
 
   // initialize the vector of paths
   std::vector<std::vector<Eigen::Vector3d>> paths(n_uavs);
