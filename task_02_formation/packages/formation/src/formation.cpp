@@ -117,26 +117,110 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(co
 
   for(int i = 0; i < n_uavs; i++) {
     for(int j = 0; j < n_uavs; j++) {
-      cost[i][j] = (final_states[j] - initial_states[i]).norm();
+      cost[i][j] = (initial_states[i] - final_states[j]).norm();
     }
   }
 
+  // | ------------- Assign optimal goals to starts with Hungarian Algorithm ------------ |
   std::vector<int> assignment = hungarianSolve(cost);
 
   // initialize the vector of paths
-  std::vector<std::vector<Eigen::Vector3d>> paths(n_uavs);
+  std::vector<std::vector<Eigen::Vector3d>> paths;
+
+ // | --------------- Initialize the Astar object -------------- |
+  const double resolution = 0.6;
+  astar::Astar astar(resolution);
+  std::set<astar::Cell> obstacles;
+  double separation = 1.8;  // minimum distance between paths
+
 
   // for each UAV
   for (int i = 0; i < n_uavs; i++) {
 
-    // prepare the path
-    std::vector<Eigen::Vector3d> path;
+  // prepare the path container
+  std::vector<Eigen::Vector3d> path;
 
-    // path made of two waypoints: I -> F
+  // initialize A* start and goal
+  astar::Position start(initial_states[i][0], initial_states[i][1], initial_states[i][2]);
+  astar::Position goal(final_states[assignment[i]][0], final_states[assignment[i]][1], final_states[assignment[i]][2]);
+
+  // Create temporary obstacles set for this planning iteration
+  std::set<astar::Cell> temp_obstacles = obstacles;
+
+  // | -------- Add starts of other UAVs as temporary obstacles -------- |
+  std::set<astar::Cell> other_starts_obstacles;
+  for (int j = 0; j < n_uavs; j++) {
+    if (j != i) {  // Skip the current UAV's own start
+      astar::Cell other_start = astar.toGrid(initial_states[j][0], initial_states[j][1], initial_states[j][2]);
+      
+      // Expand obstacle region around other UAV's start position
+      int expand_cells = static_cast<int>(std::ceil(separation / resolution));
+      
+      for (int dx = -expand_cells; dx <= expand_cells; dx++) {
+        for (int dy = -expand_cells; dy <= expand_cells; dy++) {
+          for (int dz = -expand_cells; dz <= expand_cells; dz++) {
+            
+            // Convert back to physical coordinates
+            double dist = std::sqrt(std::pow(dx * resolution, 2) +
+                                    std::pow(dy * resolution, 2) +
+                                    std::pow(dz * resolution, 2));
+            
+            if (dist <= separation) {
+              astar::Cell expanded(other_start.x() + dx, other_start.y() + dy, other_start.z() + dz);
+              temp_obstacles.insert(expanded);
+              other_starts_obstacles.insert(expanded);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // plan the path with temporary obstacles
+  std::optional<std::list<astar::Position>> path_opt = astar.plan(start, goal, temp_obstacles);
+
+  if (path_opt) {
+    for (const astar::Position &pos : path_opt.value()) {
+      path.push_back(Eigen::Vector3d(pos.x(), pos.y(), pos.z()));
+
+      // | -------- Expand obstacle region around each path point -------- |
+      astar::Cell center = astar.toGrid(pos.x(), pos.y(), pos.z());
+      int expand_cells = static_cast<int>(std::ceil(separation / resolution));
+
+      for (int dx = -expand_cells; dx <= expand_cells; dx++) {
+        for (int dy = -expand_cells; dy <= expand_cells; dy++) {
+          for (int dz = -expand_cells; dz <= expand_cells; dz++) {
+
+            // Convert back to physical coordinates
+            double dist = std::sqrt(std::pow(dx * resolution, 2) +
+                                    std::pow(dy * resolution, 2) +
+                                    std::pow(dz * resolution, 2));
+
+            if (dist <= separation) {
+              astar::Cell expanded(center.x() + dx, center.y() + dy, center.z() + dz);
+              obstacles.insert(expanded);  // Add to permanent obstacles
+            }
+          }
+        }
+      }
+    }
+  } else {
+    printf("path not found for UAV %d\n", i);
     path.push_back(initial_states[i]);
     path.push_back(final_states[assignment[i]]);
+  }
 
     paths.push_back(path);
+  }
+
+// Visualize the obstacle set for debugging
+  for (const auto& obstacle : obstacles) {
+    astar::Position pos = astar.fromGrid(obstacle);
+    action_handlers_.visualizeCube(
+      Position_t{pos.x(), pos.y(), pos.z()}, 
+      Color_t{1.0, 0.5, 0.0, 0.2},  // Red, semi-transparent
+      resolution
+    );
   }
 
   return paths;
