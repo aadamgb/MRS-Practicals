@@ -7,6 +7,142 @@ namespace task_02_formation
 // |                    the library interface                   |
 // --------------------------------------------------------------
 
+bool bpm_dfs(int row, std::vector<std::vector<int>>& adj, std::vector<bool>& visited, std::vector<int>& match) {
+  for (int col : adj[row]) {
+    if (!visited[col]) {
+      visited[col] = true;
+      
+      if (match[col] == -1 || bpm_dfs(match[col], adj, visited, match)) {
+        match[col] = row;
+        return true;
+      }
+
+    }
+  }
+  return false;
+}
+
+
+std::vector<Eigen::Vector2d> find_independent_zeros(std::vector<std::vector<double>>& cost) {
+  int n = cost.size();
+
+  // Build adjacency list of zero positions
+  std::vector<std::vector<int>> adj(n);
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < n; j++) {
+      if (fabs(cost[i][j]) < 1e-9) adj[i].push_back(j);
+    }
+  }
+
+  std::vector<int> match_col(n, -1);
+  for (int row = 0; row < n; row++) {
+    std::vector<bool> visited(n, false);
+    bpm_dfs(row, adj, visited, match_col);
+  }
+
+  std::vector<Eigen::Vector2d> independent_zeros;
+  for (int j = 0; j < n; ++j) {
+    if (match_col[j] != -1) {
+      independent_zeros.push_back(Eigen::Vector2d(match_col[j], j));
+    }
+  }
+
+  return independent_zeros;
+}
+
+std::vector<int> Hungarian(std::vector<std::vector<double>>& cost) {
+  int n = cost.size();
+  // | ---- Step 1: Row and column reduction ---- |
+    // Step 1: Row reduction
+    for (int i = 0; i < n; i++) {
+        double min_val = *std::min_element(cost[i].begin(), cost[i].end());
+        for (int j = 0; j < n; j++) {
+            cost[i][j] -= min_val;
+        }
+    }
+    
+    // Step 1: Column reduction
+    for (int j = 0; j < n; j++) {
+        double min_val = cost[0][j];
+        for (int i = 1; i < n; i++) {
+            if (cost[i][j] < min_val) min_val = cost[i][j];
+        }
+        for (int i = 0; i < n; i++) {
+            cost[i][j] -= min_val;
+        }
+    }
+
+
+  // | --- Step 2: Find the solution ------------ |
+  while(true) {
+    auto zeros  = find_independent_zeros(cost);
+  if ((int)zeros.size() == n) {
+    // Final assignment
+    std::vector<int> assignment(n, -1);
+    for (auto& z : zeros) {
+      assignment[z[0]] = z[1];
+    }
+    return assignment;
+  }
+
+    std::vector<bool> covered_rows(n, false);
+    std::vector<bool> covered_cols(n, false);
+
+    // Step 3: Cover all rows without assigned zeros
+    for (int i = 0; i < n; i++){
+      bool assigned = false;
+      for (auto& z : zeros) {
+        if ((int)z[0] == i) assigned = true;
+      }
+      if (!assigned) covered_rows[i] = true;
+    }
+
+    
+    // Step 4: Iteratively mark columns and 
+    bool changed;
+    do {
+      changed = false;
+      for (int i = 0; i < n; i++) {
+        if (covered_rows[i]) {
+          for ( int j = 0; j < n; j++) {
+            if (fabs(cost[i][j]) < 1e-9 && !covered_cols[j]) {
+              covered_cols[j] = true;
+              for (auto& z : zeros) {
+                if ((int)z[1] == j && !covered_rows[(int)z[0]]) {
+                  covered_rows[(int)z[0]] = true;
+                  changed = true;
+                }
+              }
+            }
+          }
+        }
+      }
+    } while (changed);
+
+    // Step 5: Find the mimimum uncoverd value
+    double min_uncovered = std::numeric_limits<double>::max();
+    for (int i = 0; i < n; i++) {
+      if (!covered_rows[i]) {
+        for (int j = 0; j < n; j++) {
+          if (!covered_cols[j] && cost[i][j] < min_uncovered) {
+            min_uncovered = cost[i][j];
+          }
+        }
+      }
+    }
+
+    // Step 6: Adjust cost matrix
+    for (int i = 0; i < n; i++) {
+      for (int j = 0; j < n; j++) {
+        if (!covered_rows[i] && !covered_cols[j])
+          cost[i][j] -= min_uncovered;
+        else if (covered_rows[i] && covered_cols[j])
+          cost[i][j] += min_uncovered;
+      }
+    }
+  }
+}
+
 /* init() //{ */
 
 /**
@@ -54,8 +190,19 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(co
   // how many UAVs do we have
   int n_uavs = initial_states.size();
 
+  // | ------------- calculate the cost matrix (length from start to goals) ------------ |
+  std::vector<std::vector<double>> cost(n_uavs, std::vector<double>(n_uavs));
+
+  for(int i = 0; i < n_uavs; i++) {
+    for(int j = 0; j < n_uavs; j++) {
+      cost[i][j] = (final_states[j] - initial_states[i]).norm();
+    }
+  }
+
+  std::vector<int> assignment = Hungarian(cost);
+
   // initialize the vector of paths
-  std::vector<std::vector<Eigen::Vector3d>> paths;
+  std::vector<std::vector<Eigen::Vector3d>> paths(n_uavs);
 
   // for each UAV
   for (int i = 0; i < n_uavs; i++) {
@@ -65,13 +212,15 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(co
 
     // path made of two waypoints: I -> F
     path.push_back(initial_states[i]);
-    path.push_back(final_states[i]);
+    path.push_back(final_states[assignment[i]]);
 
     paths.push_back(path);
   }
 
   return paths;
 }
+
+
 
 //}
 
