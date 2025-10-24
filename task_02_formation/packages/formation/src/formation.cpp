@@ -103,8 +103,6 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
   const std::vector<Eigen::Vector3d> &final_states) 
 {
   int n_uavs = initial_states.size();
-
-  // visualize ground grid (optional)
   action_handlers_.visualizeCube(Position_t{0, 0, 0}, Color_t{0.0, 0.0, 1.0, 0.05}, 1.0);
 
   // | --- Step 1: Assign optimally goals to starts with the Hungarian Algorithm --- |
@@ -132,9 +130,11 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
   // 2.2 Plan paths for each UAV sequentially 
   for (int i = 0; i < n_uavs; i++) {
     std::vector<Eigen::Vector3d> path;
+    
     astar::Position start(initial_states[i][0], 
                           initial_states[i][1], 
                           initial_states[i][2]);
+
     astar::Position goal(final_states[assignment[i]][0], 
                          final_states[assignment[i]][1], 
                          final_states[assignment[i]][2]);
@@ -181,7 +181,40 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
     } else {
       printf("[WARN] Path not found for UAV %d\n", i);
     }
-    paths.push_back(path);
+
+    // | --- Step 3: Straighten path (not required) --- |
+    std::vector<Eigen::Vector3d> straightened_path;
+    if (!path.empty()) {
+      straightened_path.push_back(path.front());
+      int p = 0;
+      while (p < (int)path.size() - 1) {
+        int l = path.size() - 1;
+        for (; l > p + 1; --l) {
+          astar::Position pos_p(path[p][0], path[p][1], path[p][2]);
+          astar::Position pos_l(path[l][0], path[l][1], path[l][2]);
+          if (astar.hasLineOfSight(pos_p, pos_l, temp_obstacles)) {
+            break;
+          }
+      }
+        straightened_path.push_back(path[l]);
+        p = l;
+      }
+    }
+
+    // --- Now inflate the (straightened) path into the global obstacles set ---
+    int expand_cells = static_cast<int>(std::ceil(separation / resolution));
+    for (const auto &pt : straightened_path) {
+      astar::Cell center = astar.toGrid(pt.x(), pt.y(), pt.z());
+      for (int dx = -expand_cells; dx <= expand_cells; ++dx)
+        for (int dy = -expand_cells; dy <= expand_cells; ++dy)
+          for (int dz = -expand_cells; dz <= expand_cells; ++dz) {
+            astar::Cell neighbor(center.x() + dx, center.y() + dy, center.z() + dz);
+            obstacles.insert(neighbor);
+          }
+    }
+    paths.push_back(straightened_path);
+
+    // paths.push_back(path);
   }
 
   // Optional: visualize all obstacles at the end
@@ -189,16 +222,13 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
     astar::Position pos = astar.fromGrid(obstacle);
     action_handlers_.visualizeCube(
       Position_t{pos.x(), pos.y(), pos.z()},
-      Color_t{1.0, 0.5, 0.0, 0.1},  // red transparent
+      Color_t{1.0, 0.5, 0.0, 0.05},  // red transparent
       resolution
     );
   }
 
   return paths;
 }
-
-
-
 
 //}
 
@@ -227,9 +257,9 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
   Eigen::MatrixXd g = Eigen::VectorXd::Zero(N);
 
   // the solution... initialized as (0, 0, 0)^T, is it a good initialization?
-  Eigen::Vector3d s = Eigen::Vector3d(0, 0, 0);
+  Eigen::Vector3d s = Eigen::Vector3d(20, 20, 0);
 
-  const int max_iterations = 30;
+  const int max_iterations = 50;
 
   for (int n_iterations = 0; n_iterations < max_iterations; n_iterations++) {
 
@@ -245,6 +275,10 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
 
     // do the Gauss-Newton iteration
     s = s - (J.transpose() * J).inverse() * J.transpose() * g;
+
+    // Clamp each component of s to [-90√2, 90√2]
+    double limit = 90.0 * std::sqrt(2.0);
+    s = s.cwiseMax(-limit).cwiseMin(limit);
   }
 
   return s;
@@ -322,6 +356,8 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       if (!success) {
         printf("something went wrong while reshaping the formation\n");
         return;
+      } else {
+         printf("Succes in case 0!\n");
       }
 
       user_defined_variable_++;
@@ -337,6 +373,34 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       if (!success) {
         printf("something went wrong moving the leader\n");
         return;
+      } else {
+         printf("Succes in case 1!\n");
+      }
+
+      user_defined_variable_++;
+
+      break;
+    }
+
+    case 2: {
+      // reshape to go up
+      std::vector<Eigen::Vector3d> formation_line;
+      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 3.0));
+
+      // plan paths to reshape the formation
+      std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
+
+      // tell the formation to reshape the formation
+      // this will make the UAVs move, the flag "formation_state.is_static" will become false
+      bool success = action_handlers.reshapeFormation(paths);
+
+      if (!success) {
+        printf("something went wrong while reshaping the formation\n");
+        return;
+      } else {
+         printf("Succes in case 2! going forward...\n");
       }
 
       user_defined_variable_++;
@@ -347,7 +411,8 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
     default: {
 
       // tell the virtual leader to move to the next "cylinder"
-      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(10.0 * (user_defined_variable_ - 2), 0, 3));
+      
+      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(10.0 * (user_defined_variable_ - 3), 70, 3));
 
       if (!success) {
         printf("something went wrong moving the leader\n");

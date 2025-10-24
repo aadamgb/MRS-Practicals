@@ -656,6 +656,44 @@ public:
 
     return {path};
   }
+
+
+  /**
+   * @brief Check if there is a clear line of sight between two positions (no obstacles).
+   *
+   * Uses simple ray marching between the two positions with steps smaller than the grid resolution.
+   */
+  bool hasLineOfSight(const Position &p1, const Position &p2,
+                      const std::set<Cell> &obstacles) const 
+  {
+    double dx = p2.x() - p1.x();
+    double dy = p2.y() - p1.y();
+    double dz = p2.z() - p1.z();
+    double length = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (length < 1e-6)
+      return true;
+
+    double step = grid_resolution() * 0.5;  // half-cell steps
+    int num_steps = static_cast<int>(length / step);
+
+    double invlen = 1.0 / length;
+    double dirx = dx * invlen;
+    double diry = dy * invlen;
+    double dirz = dz * invlen;
+
+    for (int i = 0; i <= num_steps; ++i) {
+      double t = i * step;
+      Position pos(p1.x() + dirx * t, p1.y() + diry * t, p1.z() + dirz * t);
+      Cell c = toGrid(pos);
+      if (obstacles.find(c) != obstacles.end()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  double grid_resolution() const { return grid_.toGrid(1, 0, 0).distance(grid_.toGrid(0, 0, 0)); }
+
 };
 
 //}
