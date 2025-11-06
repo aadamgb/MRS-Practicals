@@ -8,6 +8,12 @@
 namespace task_02_formation
 {
 
+// typedef enum {
+//   STATE_INIT,
+//   STATE_RESHAPE,
+//   STATE_INIT,
+// } State_t;
+
 class Formation : public Task02Formation {
 
 public:
@@ -66,10 +72,26 @@ public:
    */
   void update(const FormationState_t &formation_state, const Ranging_t &ranging, const double &time_stamp, ActionHandlers_t &action_handlers);
 
+  std::tuple<Eigen::Vector4d, Eigen::Matrix4d> lkfPredict(const Eigen::Vector4d &x, const Eigen::Matrix4d &x_cov);
+
+  std::tuple<Eigen::Vector4d, Eigen::Matrix4d> lkfCorrect(const Eigen::Vector4d &x, const Eigen::Matrix4d &x_cov, const Eigen::Vector2d &meas);
+
+
+
 private:
   // | -------- Put any custom variables and methods here ------- |
 
   int user_defined_variable_ = 0;
+  Eigen::Matrix4d A_;
+  Eigen::Matrix4d P_;
+  Eigen::Matrix4d Q_;
+  Eigen::Matrix<double, 2, 4> H_;
+  Eigen::Matrix2d R_;
+  Eigen::Vector4d x_;
+
+  bool first_iteration_, h_, v_;
+
+
 };
 
 }  // namespace task_02_formation
