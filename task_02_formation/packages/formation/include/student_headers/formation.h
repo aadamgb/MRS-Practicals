@@ -70,6 +70,8 @@ private:
   // | -------- Put any custom variables and methods here ------- |
 
   int user_defined_variable_ = 0;
+
+  bool h_, v_;
 };
 
 }  // namespace task_02_formation
