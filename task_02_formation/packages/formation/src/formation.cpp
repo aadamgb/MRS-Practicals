@@ -65,7 +65,7 @@ std::vector<int> hungarianSolve(const std::vector<std::vector<double>> &cost) {
       assignment[p[j] - 1] = j - 1;
   return assignment;
 }
-// *Credits: Hungarian Solve algorithm produced by an LLM
+// *Credits: hungarianSolve algorithm produced by an LLM
 
 
 std::tuple<Eigen::Vector4d, Eigen::Matrix4d> Formation::lkfPredict(const Eigen::Vector4d &x, const Eigen::Matrix4d &x_cov){
@@ -80,19 +80,21 @@ std::tuple<Eigen::Vector4d, Eigen::Matrix4d> Formation::lkfPredict(const Eigen::
 
 std::tuple<Eigen::Vector4d, Eigen::Matrix4d> Formation::lkfCorrect(const Eigen::Vector4d &x, const Eigen::Matrix4d &x_cov, const Eigen::Vector2d &meas){
 
-  Eigen::Vector4d new_x;      // the updated state vector, x[k+1]
-  Eigen::Matrix4d new_P;  // the updated covariance matrix
+  Eigen::Vector4d new_x = x;      
+  Eigen::Matrix4d new_P = x_cov;  
+  Eigen::Matrix2d S = H_ * x_cov * H_.transpose() + R_;
 
-  // Kalman gain 
-  Eigen::Matrix<double,4,2> K = x_cov * H_.transpose() *
-      (H_ * x_cov * H_.transpose() + R_).ldlt().solve(Eigen::Matrix2d::Identity());
+  if (!S.allFinite()) {
+    printf("error s not finite");
+    return {x, x_cov};
+  }
 
-  // Updated state prediction 
+  Eigen::Matrix<double,4,2> K = x_cov * H_.transpose() * S.ldlt().solve(Eigen::Matrix2d::Identity());
   new_x = x + K * (meas - H_ * x);
 
-  // Updated covariance (Joseph form for numerical stability)
-  new_P = (Eigen::Matrix4d::Identity() - K * H_) * x_cov * 
-              (Eigen::Matrix4d::Identity() - K * H_).transpose() + K * R_ * K.transpose();
+  // Joseph form for numerical stability
+  Eigen::Matrix4d I = Eigen::Matrix4d::Identity();
+  new_P = (I - K * H_) * x_cov * (I - K * H_).transpose() + K * R_ * K.transpose();
 
   return {new_x, new_P};
 }
@@ -135,6 +137,16 @@ void Formation::init() {
   Q_(2,2) = dt2*accel_var; Q_(3,3)=Q_(2,2);
 
   first_iteration_ = true;
+
+  prev_h_ = 90.0;
+  prev_v_ = 90.0;
+
+  is_right_ = true;
+  is_up_= true;
+
+  initial_sequence_ = false;
+  init_flag_ = false;
+  user_defined_variable_ = 0;
 
 }
 
@@ -307,6 +319,85 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
  * @return the estimated 3D position of the source of radiation.
  */
 
+// Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
+//                                            const Eigen::VectorXd &distances) {
+//   const int N = static_cast<int>(positions.size());
+//   if (N < 3) {
+//     return Eigen::Vector3d::Zero();
+//   }
+
+//   // -------------------- Initialization --------------------
+//   Eigen::Vector2d s = Eigen::Vector2d::Zero();
+//   for (const auto &p : positions) s += p.head<2>();
+//   s /= double(N);
+
+//   const int max_iterations = 200;
+//   const double damping_initial = 1e-2;    // LM damping parameter
+//   const double convergence_tol = 1e-6;    // stop when Δs is small
+//   // const double position_limit = 90.0;    // clamp x, y
+//   const double position_limit = 80.0;    // clamp x, y
+
+//   double lambda = damping_initial;        // LM damping factor
+
+//   // -------------------- Iterative optimization --------------------
+//   for (int iter = 0; iter < max_iterations; ++iter) {
+//     Eigen::VectorXd g(N);               // residual vector
+//     Eigen::MatrixXd J(N, 2);            // Jacobian matrix
+
+//     // Compute residuals and Jacobian
+//     for (int i = 0; i < N; ++i) {
+//       Eigen::Vector2d diff = s - positions[i].head<2>();
+//       double dist_est = diff.norm();
+
+//       if (dist_est < 1e-8) dist_est = 1e-8;
+
+//       g(i) = dist_est - distances[i];
+//       J.row(i) = diff.transpose() / dist_est;
+//     }
+
+//     // Compute LM step
+//     Eigen::Matrix2d H = J.transpose() * J;
+//     Eigen::Vector2d g_norm = J.transpose() * g;
+
+//     H += lambda * Eigen::Matrix2d::Identity();
+
+//     Eigen::Vector2d delta = -H.ldlt().solve(g_norm);
+//     Eigen::Vector2d s_new = s + delta;
+
+//     // Apply constraints
+//     s_new.x() = std::max(-position_limit, std::min(position_limit, s_new.x()));
+//     s_new.y() = std::max(-position_limit, std::min(position_limit, s_new.y()));
+
+//     // Evaluate new residual norm
+//     double old_error = g.squaredNorm();
+//     double new_error = 0.0;
+
+//     for (int i = 0; i < N; ++i) {
+//       new_error += std::pow((s_new - positions[i].head<2>()).norm() - distances[i], 2);
+//     }
+
+//     // LM adaptive damping
+//     if (new_error < old_error) {
+//       // Accept step
+//       s = s_new;
+//       lambda *= 0.7;  // decrease damping (trusting model more)
+//     } else {
+//       // Reject step
+//       lambda *= 2.0;  // increase damping (trust model less)
+//     }
+
+//     // Check for convergence
+//     if (delta.norm() < convergence_tol) {
+//       break;
+//     }
+//   }
+
+//   // -------------------- Return final estimate --------------------
+//   Eigen::Vector3d s_final;
+//   s_final << s.x(), s.y(), 0.0;
+//   return s_final;
+// }
+
 Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
                                            const Eigen::VectorXd &distances) {
   const int N = static_cast<int>(positions.size());
@@ -314,78 +405,110 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
     return Eigen::Vector3d::Zero();
   }
 
-  // -------------------- Initialization --------------------
-  Eigen::Vector3d s = Eigen::Vector3d::Zero();
-  for (const auto &p : positions) {
-    s += p;
-  }
-  s /= N;
-  s.z() = 0.0;
-
+  // -------------------- Parameter setup --------------------
   const int max_iterations = 200;
-  const double damping_initial = 1e-2;    // LM damping parameter
-  const double convergence_tol = 1e-6;    // stop when Δs is small
-  const double position_limit = 90.0;    // clamp x, y
+  const double damping_initial = 1e-2;
+  const double convergence_tol = 1e-6;
+  const double position_limit = 80.0;
+  const int num_restarts = 5;  // random restarts for robustness
+  const double outlier_threshold = 2.5;  // reject outliers in sigma units
 
-  double lambda = damping_initial;        // LM damping factor
+  Eigen::Vector3d best_solution = Eigen::Vector3d::Zero();
+  double best_error = std::numeric_limits<double>::max();
 
-  // -------------------- Iterative optimization --------------------
-  for (int iter = 0; iter < max_iterations; ++iter) {
-    Eigen::VectorXd g(N);               // residual vector
-    Eigen::MatrixXd J(N, 3);            // Jacobian matrix
+  // -------------------- Helper lambda for optimization --------------------
+  auto optimize = [&](Eigen::Vector2d s_init) {
+    Eigen::Vector2d s = s_init;
+    double lambda = damping_initial;
 
-    // Compute residuals and Jacobian
-    for (int i = 0; i < N; ++i) {
-      Eigen::Vector3d diff = s - positions[i];
-      double dist_est = diff.norm();
+    for (int iter = 0; iter < max_iterations; ++iter) {
+      Eigen::VectorXd g(N);
+      Eigen::MatrixXd J(N, 2);
 
-      if (dist_est < 1e-8) dist_est = 1e-8;
+      // Compute residuals and Jacobian
+      for (int i = 0; i < N; ++i) {
+        Eigen::Vector2d diff = s - positions[i].head<2>();
+        double dist_est = diff.norm();
+        if (dist_est < 1e-8) dist_est = 1e-8;
+        g(i) = dist_est - distances[i];
+        J.row(i) = diff.transpose() / dist_est;
+      }
 
-      g(i) = dist_est - distances[i];
-      J.row(i) = diff.transpose() / dist_est;
+      // Reject outliers dynamically
+      double mean = g.mean();
+      double stddev = std::sqrt((g.array() - mean).square().mean());
+      for (int i = 0; i < N; ++i) {
+        if (std::abs(g(i) - mean) > outlier_threshold * stddev) {
+          g(i) = 0.0;  // reduce outlier influence
+          J.row(i).setZero();
+        }
+      }
+
+      // LM step
+      Eigen::Matrix2d H = J.transpose() * J + lambda * Eigen::Matrix2d::Identity();
+      Eigen::Vector2d g_norm = J.transpose() * g;
+      Eigen::Vector2d delta = -H.ldlt().solve(g_norm);
+      Eigen::Vector2d s_new = s + delta;
+
+      // Clamp solution
+      s_new.x() = std::clamp(s_new.x(), -position_limit, position_limit);
+      s_new.y() = std::clamp(s_new.y(), -position_limit, position_limit);
+
+      // Compute new error
+      double new_error = 0.0;
+      for (int i = 0; i < N; ++i)
+        new_error += std::pow((s_new - positions[i].head<2>()).norm() - distances[i], 2);
+
+      // Adaptive damping
+      if (new_error < g.squaredNorm()) {
+        s = s_new;
+        lambda *= 0.7;
+      } else {
+        lambda *= 2.0;
+      }
+
+      if (delta.norm() < convergence_tol)
+        break;
     }
 
-    // Compute LM step
-    Eigen::Matrix3d H = J.transpose() * J;
-    Eigen::Vector3d g_norm = J.transpose() * g;
+    // Final residual
+    double final_error = 0.0;
+    for (int i = 0; i < N; ++i)
+      final_error += std::pow((s - positions[i].head<2>()).norm() - distances[i], 2);
+    return std::make_pair(s, final_error);
+  };
 
-    H += lambda * Eigen::Matrix3d::Identity();
+  // -------------------- Multiple random restarts --------------------
+  Eigen::Vector2d centroid = Eigen::Vector2d::Zero();
+  for (const auto &p : positions)
+    centroid += p.head<2>();
+  centroid /= double(N);
 
-    Eigen::Vector3d delta = -H.ldlt().solve(g_norm);
-    Eigen::Vector3d s_new = s + delta;
-
-    // Apply constraints
-    s_new.x() = std::max(-position_limit, std::min(position_limit, s_new.x()));
-    s_new.y() = std::max(-position_limit, std::min(position_limit, s_new.y()));
-    s_new.z() = 0.0;
-
-    // Evaluate new residual norm
-    double old_error = g.squaredNorm();
-    double new_error = 0.0;
-
-    for (int i = 0; i < N; ++i) {
-      new_error += std::pow((s_new - positions[i]).norm() - distances[i], 2);
-    }
-
-    // LM adaptive damping
-    if (new_error < old_error) {
-      // Accept step
-      s = s_new;
-      lambda *= 0.7;  // decrease damping (trusting model more)
-    } else {
-      // Reject step
-      lambda *= 2.0;  // increase damping (trust model less)
-    }
-
-    // Check for convergence
-    if (delta.norm() < convergence_tol) {
-      break;
+  for (int r = 0; r < num_restarts; ++r) {
+    // Randomized initialization near centroid
+    Eigen::Vector2d s0 = centroid + Eigen::Vector2d::Random() * 5.0;
+    auto [s_opt, err] = optimize(s0);
+    if (err < best_error) {
+      best_error = err;
+      best_solution.head<2>() = s_opt;
     }
   }
 
-  // -------------------- Return final estimate --------------------
-  return s;
+  // -------------------- Averaging for stability --------------------
+  static std::deque<Eigen::Vector3d> history;
+  static const size_t window = 10;
+  history.push_back(best_solution);
+  if (history.size() > window) history.pop_front();
+
+  Eigen::Vector3d avg_solution = Eigen::Vector3d::Zero();
+  for (const auto &v : history)
+    avg_solution += v;
+  avg_solution /= double(history.size());
+
+  return avg_solution;
 }
+
+
 
 /* update() //{ */
 
@@ -419,11 +542,29 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
   }
 
   // Raw measurement from multilateration
-  Eigen::Vector3d target_position = multilateration(abs_positions, ranging.distances);
+  // std::cout << " (raw) UAV 1: " << ranging.distances[0] << "UAV 2: " << ranging.distances[1] << "UAV 3: " << ranging.distances[2] << std::endl;
 
+  static std::deque<Eigen::Vector3d> distances_buffer;
+  static const size_t max_samples_d = 30; // 30 * 10 Hz = 3s
+
+  distances_buffer.push_back(ranging.distances);
+  if (distances_buffer.size() > max_samples_d) {
+    distances_buffer.pop_front();
+  }
+
+  Eigen::Vector3d distances_avg = Eigen::Vector3d::Zero();
+  for (const auto &pos : distances_buffer) {
+    distances_avg += pos;
+  }
+  distances_avg /= distances_buffer.size();
+
+  std::cout << " (avg) UAV 1: " <<  distances_avg[0] << "UAV 2: " << distances_avg[1] << "UAV 3: " << distances_avg[2] << std::endl;
+
+  Eigen::Vector3d target_position = multilateration(abs_positions, distances_avg);
 
   if(first_iteration_){
-    x_[0] = target_position[0]; x_[1] = target_position[2];
+    x_[0] = target_position[0]; 
+    x_[1] = target_position[1];
     first_iteration_ = false;
   }
   
@@ -434,7 +575,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
   // | ------------- maintain 5 s average (10 Hz → 50 samples) ------------ |
   static std::deque<Eigen::Vector3d> target_buffer;
-  static const size_t max_samples = 50; // 50 * 10 Hz = 5s
+  static const size_t max_samples = 60; // 50 * 10 Hz = 5s
 
   // target_buffer.push_back(Eigen::Vector3d(x_[0], x_[1], target_position[2]));
   target_buffer.push_back(target_position);
@@ -468,9 +609,12 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
                                            formation_state.virtual_leader[2]}, Color_t{1.0, 0.5, 0.0, 1.0}, 1.0);
 
   // | ------------------- Put your code here ------------------- |
+
+  std::cout << "Robot is: " << (is_up_ ? "UP" : "DOWN") << " and " << (is_right_ ? "RIGHT" : "LEFT") << std::endl; 
+
   Eigen::Vector3d distance = (target_position_avg - formation_state.virtual_leader);
   if (user_defined_variable_ != 1 && user_defined_variable_ != 2 && user_defined_variable_ != 4 &&
-      user_defined_variable_ != 5 && user_defined_variable_ != 10 && user_defined_variable_ !=7) {
+      user_defined_variable_ != 5 && user_defined_variable_ != 10  && !initial_sequence_) {
 
     static double inside_start_time = -1.0; // when we first got within 15 m
 
@@ -497,6 +641,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       }
     }
   }
+
   // do nothing while the formation is in motion
   if (!formation_state.is_static) {
     return;
@@ -508,9 +653,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
     // case state_:
     case 0: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-3.0, 0.5, 1.0));
+      formation_line.push_back(Eigen::Vector3d(-4.0, 0.5, 1.0));
       formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
-      formation_line.push_back(Eigen::Vector3d(3.0, -0.5, 6.0));
+      formation_line.push_back(Eigen::Vector3d(4.0, -0.5, 6.0));
 
       // plan paths to reshape the formation
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
@@ -526,22 +671,37 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          v_ = false;
       }
 
-      user_defined_variable_ = (distance.x() > 0) ? 1 : 2;
+      if(initial_sequence_  && !init_flag_){
+        user_defined_variable_ = 1;
+      } else if(initial_sequence_ && init_flag_){
+        user_defined_variable_ = 2;
+      } else {
+        user_defined_variable_ = (distance.x() > 0) ? 1 : 2;
+      }
+
 
       break;
     }
 
     case 1: {
       bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::min(formation_state.virtual_leader[0] + 20, 90.0), 
-                                                                       formation_state.virtual_leader[1], 3));
+                                                                       formation_state.virtual_leader[1], 0.0));
       if (!success) {
         printf("something went wrong moving the leader\n");
         return;
       } else {
          printf("Going RIGHT\n");
+         if(prev_h_ > distances_avg[0]){
+            prev_h_ = distances_avg[0];
+            is_right_ = true;
+         }
       }
       
-      user_defined_variable_ = 9;
+      if(initial_sequence_){
+        user_defined_variable_ = 3;
+      } else {
+        user_defined_variable_ = 9;
+      }
 
       break;
     }
@@ -549,26 +709,43 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
     case 2: {
 
       // tell the virtual leader to move to the center of the arena
-      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - 20, -90.0), 
-                                                                       formation_state.virtual_leader[1], 3));
+      bool success;
+      double d;
+      
+
+
+      if(initial_sequence_){
+        user_defined_variable_ = 3;
+        d = 40.0;
+      } else {
+        user_defined_variable_ = 9;
+        d = 20.0;
+      }
+      
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - d, -90.0), 
+                                                                       formation_state.virtual_leader[1], 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
         return;
       } else {
-         printf("Going LEFT\n");
+        printf("Going LEFT\n");
+        if(prev_h_ < distances_avg[0]){
+          prev_h_ = distances_avg[0];
+          is_right_ = false;
+        }
       }
 
-      user_defined_variable_ = 9;
+
 
       break;
     }
 
     case 3: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 2.0));
+      formation_line.push_back(Eigen::Vector3d(-0.5, 4.0, 2.0));
       formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 4.0));
-      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 6.0));
+      formation_line.push_back(Eigen::Vector3d(0.5, -4.0, 6.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -583,23 +760,39 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          h_ = false;
       }
 
-      user_defined_variable_ = (distance.y() > 0) ? 4 : 5;
+      if(initial_sequence_ && !init_flag_){
+        user_defined_variable_ = 4;
+        init_flag_ = true;
+      } else if (initial_sequence_ && init_flag_) {
+        user_defined_variable_ = 5;
+      } else {
+        user_defined_variable_ = (distance.y() > 0) ? 4 : 5;
+      }
+      
 
       break;
     }
 
     case 4: {
       bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       std::min(formation_state.virtual_leader[1] + 20, 90.0), 3));
+                                                                       std::min(formation_state.virtual_leader[1] + 20, 90.0), 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
         return;
       } else {
          printf("Going UP\n");
+        if(prev_v_ > distances_avg[0]){
+          prev_v_ = distances_avg[0];
+          is_up_ = true;
+        }
       }
 
-      user_defined_variable_ = 9;
+      if(initial_sequence_){
+        user_defined_variable_ = 0;
+      } else {
+        user_defined_variable_ = 9;
+      }
 
       break;
     }
@@ -608,17 +801,31 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
     case 5: {
 
       // tell the virtual leader to move to the center of the arena
-      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       std::max(formation_state.virtual_leader[1] - 20, -90.0) , 3));
+      bool success;
+      double d;
+
+      if(initial_sequence_){
+        user_defined_variable_ = 6;
+        d = 40.0;
+      } else {
+        user_defined_variable_ = 9;
+        d = 20.0;
+      }
+
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
+                                                                       std::max(formation_state.virtual_leader[1] - d, -90.0) , 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
         return;
       } else {
          printf("Going DOWN\n");
+        if(prev_v_ > distances_avg[0]){
+          prev_v_ = distances_avg[0];
+          is_up_ = false;
+        }
       }
 
-      user_defined_variable_ = 9;
 
       break;
     }
@@ -629,7 +836,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       std::vector<Eigen::Vector3d> formation_line;
       formation_line.push_back(Eigen::Vector3d(-0.5, 0.5, 3.5));
       formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 0.5));
-      formation_line.push_back(Eigen::Vector3d(0.5, -0.5, 7.0));
+      formation_line.push_back(Eigen::Vector3d(0.5, -0.5, 6.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -642,7 +849,12 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          printf("Reshaping to CHASE\n");
       }
 
-      user_defined_variable_ = 10;
+      if(initial_sequence_){
+        user_defined_variable_ = 66;
+      } else {
+        user_defined_variable_ = 10;
+      }
+
 
       break;
     }
@@ -682,6 +894,51 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       break;
     }
 
+    case 66: {
+      bool success;
+
+      if(is_up_) {
+        success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
+                                                                       std::max(formation_state.virtual_leader[1] + 70, -90.0) , 0.0));
+
+      } else {
+        success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
+                                                                       std::max(formation_state.virtual_leader[1] - 70, -90.0) , 0.0));
+
+      }
+
+      if (!success) {
+        printf("Something went wrong moving the leader to the nearest center.\n");
+        return;
+      } else {
+        printf("Moving 80 m vertically.\n");
+        user_defined_variable_ = 67;
+      }
+    }
+
+    case 67: {
+      bool success;
+
+      if(is_right_) {
+      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] + 70, -90.0), 
+                                                                       formation_state.virtual_leader[1], 0.0));
+
+      } else {
+      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - 70, -90.0), 
+                                                                       formation_state.virtual_leader[1], 0.0));
+
+      }
+
+      if (!success) {
+        printf("Something went wrong moving the leader to the nearest center.\n");
+        return;
+      } else {
+        printf("Moving 80 m vertically.\n");
+        initial_sequence_ = false;
+        user_defined_variable_ = 3;
+      }
+    }
+
     default: {
 
       bool success = false;
@@ -694,12 +951,12 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
           h_ = true;
           v_ = false;
           success = action_handlers.setLeaderPosition(Eigen::Vector3d(target_position_avg[0], 
-                                                                       formation_state.virtual_leader[1] , 3));
+                                                                       formation_state.virtual_leader[1] , 0.0));
       } else if(std::abs(dx) < std::abs(dy) && !h_) {
           v_= true;
           h_ = false;
           success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       target_position_avg[1] , 3));
+                                                                       target_position_avg[1] , 0.0));
       } else {
         if(std::abs(dx) > std::abs(dy)){
           h_ = true;

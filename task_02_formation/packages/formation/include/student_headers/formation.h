@@ -89,7 +89,20 @@ private:
   Eigen::Matrix2d R_;
   Eigen::Vector4d x_;
 
-  bool first_iteration_, h_, v_;
+  bool first_iteration_, h_, v_, is_right_, is_up_, initial_sequence_, init_flag_;
+
+  double prev_h_, prev_v_;
+
+  enum class state {
+    rH = 0,
+    goRIGHT = 1,
+    goLELFT = 2,
+    rV = 3,
+    goUP = 4,
+    goDOWN = 5,
+    rCHASE = 6,
+    rCENTER= 7,
+  };
 
 
 };
