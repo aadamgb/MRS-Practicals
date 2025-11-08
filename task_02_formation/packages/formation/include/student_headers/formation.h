@@ -70,10 +70,21 @@ private:
   // | -------- Put any custom variables and methods here ------- |
 
   int user_defined_variable_ = 0;
-
-  bool h_, v_, initial_sequence_, init_flag_, is_right_, is_up_;
-
+  bool h_, v_, initial_sequence_, init_flag_, is_right_, is_up_, reshape_flag_;
   double closest_v_, closest_h_;
+
+  // enum class states
+  // {
+  //   RESHAPE_H = 0,
+  //   RIGHT = 1,
+  //   LEFT = 2,
+  //   RESHAPE_V = 3,
+  //   UP = 4,
+  //   DOWN = 5,
+  //   RESHAPE_C = 6,
+  //   GO_CENTER = 7
+  // };
+  
 };
 
 }  // namespace task_02_formation
