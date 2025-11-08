@@ -72,6 +72,12 @@ std::vector<int> hungarianSolve(const std::vector<std::vector<double>> &cost) {
  * Use this method to do any heavy pre-computations.
  */
 void Formation::init() {
+  initial_sequence_ = true;
+  init_flag_ = true;
+
+  user_defined_variable_ = 0;
+  closest_v_ = 200.0;
+  closest_h_ = 200.0;
 }
 
 //}
@@ -313,7 +319,7 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
   const int max_iterations = 200;
   const double damping_initial = 1e-2;    // LM damping parameter
   const double convergence_tol = 1e-6;    // stop when Δs is small
-  const double position_limit = 100.0;    // clamp x, y
+  const double position_limit = 90.0;    // clamp x, y
 
   double lambda = damping_initial;        // LM damping factor
 
@@ -411,11 +417,8 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
   }
 
   // Raw measurement from multilateration
-  std::cout << "UAV 1 meas distamnce: " << ranging.distances[0] << std::endl;
-  std::cout << "UAV 2 meas distamnce: " << ranging.distances[1] << std::endl;
-  std::cout << "UAV 3 meas distamnce: " << ranging.distances[2] << std::endl;
   static std::deque<Eigen::Vector3d> distances_buffer;
-  static const size_t max_samples_d = 10; // 30 * 10 Hz = 3s
+  static const size_t max_samples_d = 20; // 30 * 10 Hz = 3s
 
   distances_buffer.push_back(ranging.distances);
   if (distances_buffer.size() > max_samples_d) {
@@ -427,7 +430,8 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
     distances_avg += pos;
   }
   distances_avg /= distances_buffer.size();
-
+  
+  // std::cout << " (avg) UAV 1: " <<  distances_avg[0] << "UAV 2: " << distances_avg[1] << "UAV 3: " << distances_avg[2] << std::endl;
 
   Eigen::Vector3d target_position = multilateration(abs_positions, distances_avg);
   // | ------------- maintain 5 s average (10 Hz → 50 samples) ------------ |
@@ -459,9 +463,12 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
                                            formation_state.virtual_leader[2]}, Color_t{1.0, 0.5, 0.0, 1.0}, 1.0);
 
   // | ------------------- Put your code here ------------------- |
+
+    std::cout << "Robot is: " << (is_up_ ? "UP" : "DOWN") << " and " << (is_right_ ? "RIGHT" : "LEFT") << std::endl; 
+
   Eigen::Vector3d distance = (target_position_avg - formation_state.virtual_leader);
   if (user_defined_variable_ != 1 && user_defined_variable_ != 2 && user_defined_variable_ != 4 &&
-      user_defined_variable_ != 5 && user_defined_variable_ != 10 && user_defined_variable_ !=7) {
+      user_defined_variable_ != 5 && user_defined_variable_ != 10 && user_defined_variable_ !=7 && !initial_sequence_) {
 
     static double inside_start_time = -1.0; // when we first got within 15 m
 
@@ -517,31 +524,65 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          v_ = false;
       }
 
-      user_defined_variable_ = (distance.x() > 0) ? 1 : 2;
+      if(initial_sequence_ && init_flag_) {
+        user_defined_variable_ = 1;
+      } else if(initial_sequence_ && !init_flag_) {
+      user_defined_variable_ = 67;
+      } else {
+        user_defined_variable_ = (distance.x() > 0) ? 1 : 2;
+      }
 
       break;
     }
 
     case 1: {
-      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::min(formation_state.virtual_leader[0] + 20, 90.0), 
-                                                                       formation_state.virtual_leader[1], 3));
+      bool success;
+      double d;
+
+      // if(initial_sequence_ && init_flag_) {
+      //   d = 20;        
+      // } 
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::min(formation_state.virtual_leader[0] + 20, 90.0), 
+                                                                       formation_state.virtual_leader[1], 0.0));
       if (!success) {
         printf("something went wrong moving the leader\n");
         return;
       } else {
          printf("Going RIGHT\n");
       }
-      
-      user_defined_variable_ = 9;
 
+      if(initial_sequence_){
+        user_defined_variable_ = 2;
+      } else {
+        user_defined_variable_ = 9;
+      }
+
+      if(closest_h_ > distances_avg[0]){
+        closest_h_ = distances_avg[0];
+        is_right_ = false;
+      }
+
+      std::cout << "Closest horizontal is: " << closest_h_ << ", meas distance is: " << distances_avg[0] << std::endl;
+    
       break;
     }
 
     case 2: {
 
       // tell the virtual leader to move to the center of the arena
-      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - 20, -90.0), 
-                                                                       formation_state.virtual_leader[1], 3));
+      bool success;
+      double d;
+
+      if(initial_sequence_){
+        d = 20.0;
+        user_defined_variable_ = 3;
+      } else {
+        d = 20.0;
+        user_defined_variable_ = 9;
+      }
+      
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - d, -90.0), 
+                                                                       formation_state.virtual_leader[1], 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
@@ -550,7 +591,13 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          printf("Going LEFT\n");
       }
 
-      user_defined_variable_ = 9;
+      if(closest_h_ > distances_avg[0]){
+        closest_h_ = distances_avg[0];
+        is_right_ = true;
+
+      }
+
+      std::cout << "Closest horizontal is: " << closest_h_ << ", meas distance is: " << distances_avg[0] << std::endl;
 
       break;
     }
@@ -574,14 +621,18 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          h_ = false;
       }
 
-      user_defined_variable_ = (distance.y() > 0) ? 4 : 5;
+      if(initial_sequence_) {
+        user_defined_variable_ = 4;
+      } else {
+        user_defined_variable_ = (distance.y() > 0) ? 4 : 5;
+      }
 
       break;
     }
 
     case 4: {
       bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       std::min(formation_state.virtual_leader[1] + 20, 90.0), 3));
+                                                                       std::min(formation_state.virtual_leader[1] + 20, 90.0), 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
@@ -590,7 +641,17 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          printf("Going UP\n");
       }
 
-      user_defined_variable_ = 9;
+      if(initial_sequence_){
+        user_defined_variable_ = 5;
+      } else {
+        user_defined_variable_ = 9;
+      }
+
+      if(closest_v_ > distances_avg[0]){
+        closest_v_ = distances_avg[0];
+        is_up_ = false;
+      }
+      std::cout << "Closest VERTICAL is: " << closest_v_ << ", meas distance is: " << distances_avg[0] << std::endl;
 
       break;
     }
@@ -599,8 +660,19 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
     case 5: {
 
       // tell the virtual leader to move to the center of the arena
-      bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       std::max(formation_state.virtual_leader[1] - 20, -90.0) , 3));
+      bool success;
+      double d;
+
+      if(initial_sequence_){
+        d = 20.0;
+        user_defined_variable_ = 66;
+      } else {
+        d = 20.0;
+        user_defined_variable_ = 9;
+      }
+      
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
+                                                                       std::max(formation_state.virtual_leader[1] - d, -90.0) , 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
@@ -609,7 +681,12 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          printf("Going DOWN\n");
       }
 
-      user_defined_variable_ = 9;
+      if(closest_v_ > distances_avg[0]){
+        closest_v_ = distances_avg[0];
+        is_up_ = true;
+      }
+
+      std::cout << "Closest VERTICAL is: " << closest_v_ << ", meas distance is: " << distances_avg[0] << std::endl;
 
       break;
     }
@@ -618,9 +695,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
       printf("HOLA!\n");
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-0.5, 0.5, 4.0));
+      formation_line.push_back(Eigen::Vector3d(-0.25, 0.25, 4.0));
       formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 1.0));
-      formation_line.push_back(Eigen::Vector3d(0.5, -0.5, 6.0));
+      formation_line.push_back(Eigen::Vector3d(0.25, -0.25, 6.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -633,7 +710,10 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
          printf("Reshaping to CHASE\n");
       }
 
+
       user_defined_variable_ = 10;
+
+      
 
       break;
     }
@@ -663,6 +743,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       bool success = action_handlers.setLeaderPosition(nearest_center);
       if (!success) {
         printf("Something went wrong moving the leader to the nearest center.\n");
+        user_defined_variable_ = 99;
         return;
       } else {
         printf("Leader reached nearest cell center.\n");
@@ -670,6 +751,61 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
       // Once centered, reset or transition to another state
       user_defined_variable_ = 10;
+      break;
+    }
+
+
+    case 66: {
+      bool success;
+
+      if(is_up_) {
+        success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
+                                                                       std::min(formation_state.virtual_leader[1] + 70, 90.0) , 0.0));
+
+      } else {
+        success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
+                                                                       std::max(formation_state.virtual_leader[1] - 70, -90.0) , 0.0));
+
+      }
+
+      if (!success) {
+        printf("Something went wrong moving the leader to the nearest center.\n");
+        return;
+      } else {
+        printf("Moving 80 m vertically.\n");
+        init_flag_ = false;
+        user_defined_variable_ = 0;
+      }
+
+      break;
+    }
+
+    case 67: {
+      bool success;
+
+      if(is_right_) {
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::min(formation_state.virtual_leader[0] + 70, 90.0), 
+                                                                       formation_state.virtual_leader[1], 0.0));
+
+      } else {
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - 70, -90.0), 
+                                                                       formation_state.virtual_leader[1], 0.0));
+
+      }
+
+      if (!success) {
+        printf("aaaaaaaaaaa\n");
+        return;
+      } else {
+        printf("Moving 80 m horizontally. \n");
+        initial_sequence_ = false;
+        user_defined_variable_ = 9;
+
+        std::cout << "INITIAL SEQUENCE IS: " << initial_sequence_ << std::endl;
+        std::cout << "INITIAL SEQUENCE IS: " << initial_sequence_ << std::endl;
+        std::cout << "INITIAL SEQUENCE IS: " << initial_sequence_ << std::endl;
+      }
+
       break;
     }
 
@@ -685,12 +821,12 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
           h_ = true;
           v_ = false;
           success = action_handlers.setLeaderPosition(Eigen::Vector3d(target_position_avg[0], 
-                                                                       formation_state.virtual_leader[1] , 3));
+                                                                       formation_state.virtual_leader[1] , 0.0));
       } else if(std::abs(dx) < std::abs(dy) && !h_) {
           v_= true;
           h_ = false;
           success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       target_position_avg[1] , 3));
+                                                                       target_position_avg[1] , 0.0));
       } else {
         if(std::abs(dx) > std::abs(dy)){
           h_ = true;

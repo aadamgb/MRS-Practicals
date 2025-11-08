@@ -71,7 +71,9 @@ private:
 
   int user_defined_variable_ = 0;
 
-  bool h_, v_;
+  bool h_, v_, initial_sequence_, init_flag_, is_right_, is_up_;
+
+  double closest_v_, closest_h_;
 };
 
 }  // namespace task_02_formation
