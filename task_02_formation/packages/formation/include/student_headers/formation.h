@@ -70,7 +70,7 @@ private:
   // | -------- Put any custom variables and methods here ------- |
 
   int user_defined_variable_ = 0;
-  bool h_, v_, initial_sequence_, init_flag_, is_right_, is_up_, reshape_flag_, chase_flag_;
+  bool h_, v_, initial_sequence_, init_flag_, is_right_, is_up_;
   double closest_v_, closest_h_;
 
   // enum class states
