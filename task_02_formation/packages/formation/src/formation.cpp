@@ -511,9 +511,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 0: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-3.0, 0.5, 3.0));
-      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
-      formation_line.push_back(Eigen::Vector3d(3.0, -0.5, 3.0));
+      formation_line.push_back(Eigen::Vector3d(-3.0, 0.5, 1.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 4.0));
+      formation_line.push_back(Eigen::Vector3d(3.0, -0.5, 6.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -602,9 +602,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 3: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 3.0));
-      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
-      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 1.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 4.0));
+      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 5.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -735,7 +735,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
         reshape_flag_ = true;
       }
 
-      user_defined_variable_ = 10;
+      user_defined_variable_ =  (distance.norm() < 10.0) ? 10: 9;
       break;
     }
 
@@ -795,31 +795,32 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       double dy = target_position_avg[1] - formation_state.virtual_leader[1];
 
       if(distance.norm() > 10.0){
-        user_defined_variable_ = 99;
-        break;
-      } else {
-        if (std::abs(dx) > std::abs(dy) && !v_) {
-          h_ = true;
-          v_ = false;
-          success = action_handlers.setLeaderPosition(Eigen::Vector3d(target_position_avg[0], 
-                                                                       formation_state.virtual_leader[1] , 0.0));
-        } else if(std::abs(dx) < std::abs(dy) && !h_) {
-          v_= true;
-          h_ = false;
-          success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       target_position_avg[1] , 0.0));
-        } else {
-          if(std::abs(dx) > std::abs(dy)){
-            h_ = true;
-            v_ = false;
-          } else {
-            h_ = false;
-            v_ = true;
-          }
         user_defined_variable_ = 7;
         break;
-        } 
-      }
+      } 
+
+      if (std::abs(dx) > std::abs(dy) && !v_) {
+        h_ = true;
+        v_ = false;
+        success = action_handlers.setLeaderPosition(Eigen::Vector3d(target_position_avg[0], 
+                                                                      formation_state.virtual_leader[1] , 0.0));
+      } else if(std::abs(dx) < std::abs(dy) && !h_) {
+        v_= true;
+        h_ = false;
+        success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
+                                                                      target_position_avg[1] , 0.0));
+      } else {
+        if(std::abs(dx) > std::abs(dy)){
+          h_ = true;
+          v_ = false;
+        } else {
+          h_ = false;
+          v_ = true;
+        }
+      user_defined_variable_ = 7;
+      break;
+      } 
+      
 
       if (!success) {
         printf("something went wrong moving the leader\n");
