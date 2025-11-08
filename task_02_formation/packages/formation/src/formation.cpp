@@ -353,8 +353,26 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
     Eigen::Vector3d s_new = s + delta;
 
     // Apply constraints
-    s_new.x() = std::max(-position_limit, std::min(position_limit, s_new.x()));
-    s_new.y() = std::max(-position_limit, std::min(position_limit, s_new.y()));
+    if(!initial_sequence_){
+
+      if(is_right_){
+        s_new.x() = std::max(0.0, std::min(position_limit, s_new.x()));
+      } else {
+        s_new.x() = std::max(-position_limit, std::min(0.0, s_new.x()));
+      }
+
+      if(is_up_){
+        s_new.y() = std::max(0.0, std::min(position_limit, s_new.y()));
+      } else {
+        s_new.y() = std::max(-position_limit, std::min(0.0, s_new.y()));
+      }
+
+    } else {
+      s_new.x() = std::max(-position_limit, std::min(position_limit, s_new.x()));
+      s_new.y() = std::max(-position_limit, std::min(position_limit, s_new.y()));
+    }
+
+
     s_new.z() = 0.0;
 
     // Evaluate new residual norm
@@ -750,7 +768,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       }
 
       // Once centered, reset or transition to another state
-      user_defined_variable_ = 10;
+      user_defined_variable_ = 9;
       break;
     }
 
@@ -817,41 +835,41 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       double dx = target_position_avg[0] - formation_state.virtual_leader[0];
       double dy = target_position_avg[1] - formation_state.virtual_leader[1];
 
-      if (std::abs(dx) > std::abs(dy) && !v_) {
+      if(distance.norm() > 10.0){
+        user_defined_variable_ = 7;
+        break;
+      } else {
+        if (std::abs(dx) > std::abs(dy) && !v_) {
           h_ = true;
           v_ = false;
           success = action_handlers.setLeaderPosition(Eigen::Vector3d(target_position_avg[0], 
                                                                        formation_state.virtual_leader[1] , 0.0));
-      } else if(std::abs(dx) < std::abs(dy) && !h_) {
+        } else if(std::abs(dx) < std::abs(dy) && !h_) {
           v_= true;
           h_ = false;
           success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
                                                                        target_position_avg[1] , 0.0));
-      } else {
-        if(std::abs(dx) > std::abs(dy)){
-          h_ = true;
-          v_ = false;
         } else {
-          h_ = false;
-          v_ = true;
-        }
+          if(std::abs(dx) > std::abs(dy)){
+            h_ = true;
+            v_ = false;
+          } else {
+            h_ = false;
+            v_ = true;
+          }
         user_defined_variable_ = 7;
-
         break;
+        } 
       }
-
-
-      // bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(target_position_avg[0], target_position_avg[1], 0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
         return;
       } else {
-      printf("Chasing the target!\n");
+        printf("Chasing the target!\n");
       }
 
-      user_defined_variable_ =  (distance.norm() < 10.0) ? 10: 7;
-      // user_defined_variable_ = 7;
+
       break;
     }
   }
