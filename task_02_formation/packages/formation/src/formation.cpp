@@ -511,9 +511,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 0: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-3.0, 0.5, 1.0));
-      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 4.0));
-      formation_line.push_back(Eigen::Vector3d(3.0, -0.5, 6.0));
+      formation_line.push_back(Eigen::Vector3d(-3.0, 0.5, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(3.0, -0.5, 3.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -602,9 +602,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 3: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 1.0));
-      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 4.0));
-      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 5.0));
+      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 3.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
