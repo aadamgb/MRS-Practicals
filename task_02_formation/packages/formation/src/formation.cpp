@@ -370,8 +370,8 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
           }
     }
 
-    paths.push_back(straightened_path);
-    // paths.push_back(path);
+    // paths.push_back(straightened_path);
+    paths.push_back(path);
 
   }
 
@@ -772,7 +772,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       }
       
       success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0], 
-                                                                       std::max(formation_state.virtual_leader[1] - 20.0, -90.0) , 0.0));
+                                                                       std::max(formation_state.virtual_leader[1] - 10.0, -90.0) , 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
