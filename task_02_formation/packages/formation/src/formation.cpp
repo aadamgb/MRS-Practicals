@@ -207,146 +207,146 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
 // }
 
 
-// Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
-//                                            const Eigen::VectorXd &distances) {
-//   const int N = static_cast<int>(positions.size());
-
-//   // -------------------- Initialization --------------------
-//   Eigen::Vector2d s = Eigen::Vector2d::Zero();
-//   for (const auto &p : positions) {
-//     s += p.head<2>();
-//   }
-//   s /= N;
-
-//   const int max_iterations = 200;
-//   // const double damping_initial = 1e-2;    // LM damping parameter
-//   const double damping_initial = 1e-2;    // LM damping parameter
-//   const double convergence_tol = 1e-6;    // stop when deelta_s is small
-//   const double position_limit = 90.0;    // clamp x, y
-//   double lambda = damping_initial;        // LM damping factor
-
-//   // -------------------- Iterative optimization --------------------
-//   for (int iter = 0; iter < max_iterations; ++iter) {
-//     Eigen::VectorXd g(N);
-//     Eigen::MatrixXd J(N, 2);
-
-//     // Compute residuals and Jacobian
-//     for (int i = 0; i < N; ++i) {
-//       Eigen::Vector2d diff = s - positions[i].head<2>();
-//       double diff_norm = diff.norm();
-
-//       // Avoid division by zero
-//       if (diff_norm < 1e-8) diff_norm = 1e-8;
-
-//       g(i) = diff_norm - distances[i];
-//       J.row(i) = diff.transpose() / diff_norm;
-//     }
-
-//     // Compute LM step
-//     Eigen::Matrix2d H = J.transpose() * J;
-//     Eigen::Vector2d g_norm = J.transpose() * g;
-
-//     H += lambda * Eigen::Matrix2d::Identity();
-
-//     Eigen::Vector2d delta = -H.ldlt().solve(g_norm);
-//     Eigen::Vector2d s_new = s + delta;
-
-//     // Apply constraints
-//     s_new.x() = std::max(-position_limit, std::min(position_limit, s_new.x()));
-//     s_new.y() = std::max(-position_limit, std::min(position_limit, s_new.y()));
-
-//     double old_error = g.squaredNorm();
-//     double new_error = 0.0;
-
-//     for (int i = 0; i < N; ++i) {
-//       new_error += std::pow((s_new - positions[i].head<2>()).norm() - distances[i], 2);
-//     }
-
-//     // LM adaptive damping
-//     if (new_error < old_error) {
-//       // Accept step
-//       s = s_new;
-//       lambda *= 0.5;  // decrease damping (trusting model more)
-//     } else {
-//       // Reject step
-//       lambda *= 2.0;  // increase damping (trust model less)
-//     }
-
-//     if (delta.norm() < convergence_tol) {
-//       break;
-//     }
-//   }
-
-//   return Eigen::Vector3d(s.x(), s.y(), 0.0);
-// }
-
 Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
                                            const Eigen::VectorXd &distances) {
   const int N = static_cast<int>(positions.size());
 
-  const int n_restarts = 5;                 // try multiple initial guesses
+  // -------------------- Initialization --------------------
+  Eigen::Vector2d s = Eigen::Vector2d::Zero();
+  for (const auto &p : positions) {
+    s += p.head<2>();
+  }
+  s /= N;
+
   const int max_iterations = 200;
-  const double damping_initial = 1e-2;
-  const double convergence_tol = 1e-6;
-  const double position_limit = 90.0;
+  // const double damping_initial = 1e-2;    // LM damping parameter
+  const double damping_initial = 1e-2;    // LM damping parameter
+  const double convergence_tol = 1e-6;    // stop when deelta_s is small
+  const double position_limit = 90.0;    // clamp x, y
+  double lambda = damping_initial;        // LM damping factor
 
-  Eigen::Vector2d best_s;
-  double best_error = std::numeric_limits<double>::max();
+  // -------------------- Iterative optimization --------------------
+  for (int iter = 0; iter < max_iterations; ++iter) {
+    Eigen::VectorXd g(N);
+    Eigen::MatrixXd J(N, 2);
 
-  for (int restart = 0; restart < n_restarts; ++restart) {
-    // --- Initialize s: average + small random offset ---
-    Eigen::Vector2d s = Eigen::Vector2d::Zero();
-    for (const auto &p : positions) s += p.head<2>();
-    s /= N;
-    s += Eigen::Vector2d::Random() * 5.0;  // randomize ±5 m
+    // Compute residuals and Jacobian
+    for (int i = 0; i < N; ++i) {
+      Eigen::Vector2d diff = s - positions[i].head<2>();
+      double diff_norm = diff.norm();
 
-    double lambda = damping_initial;
+      // Avoid division by zero
+      if (diff_norm < 1e-8) diff_norm = 1e-8;
 
-    // --- Levenberg-Marquardt optimization ---
-    for (int iter = 0; iter < max_iterations; ++iter) {
-      Eigen::VectorXd g(N);
-      Eigen::MatrixXd J(N, 2);
-      for (int i = 0; i < N; ++i) {
-        Eigen::Vector2d diff = s - positions[i].head<2>();
-        double norm = std::max(diff.norm(), 1e-8);
-        g(i) = norm - distances[i];
-        J.row(i) = diff.transpose() / norm;
-      }
-
-      Eigen::Matrix2d H = J.transpose() * J + lambda * Eigen::Matrix2d::Identity();
-      Eigen::Vector2d step = -H.ldlt().solve(J.transpose() * g);
-      Eigen::Vector2d s_new = s + step;
-      s_new.x() = std::clamp(s_new.x(), -position_limit, position_limit);
-      s_new.y() = std::clamp(s_new.y(), -position_limit, position_limit);
-
-      double old_error = g.squaredNorm();
-      double new_error = 0.0;
-      for (int i = 0; i < N; ++i)
-        new_error += std::pow((s_new - positions[i].head<2>()).norm() - distances[i], 2);
-
-      if (new_error < old_error) {
-        s = s_new;
-        lambda *= 0.7;
-      } else {
-        lambda *= 2.0;
-      }
-
-      if (step.norm() < convergence_tol) break;
+      g(i) = diff_norm - distances[i];
+      J.row(i) = diff.transpose() / diff_norm;
     }
 
-    // --- Keep best solution ---
-    double final_error = 0.0;
-    for (int i = 0; i < N; ++i)
-      final_error += std::pow((s - positions[i].head<2>()).norm() - distances[i], 2);
+    // Compute LM step
+    Eigen::Matrix2d H = J.transpose() * J;
+    Eigen::Vector2d g_norm = J.transpose() * g;
 
-    if (final_error < best_error) {
-      best_error = final_error;
-      best_s = s;
+    H += lambda * Eigen::Matrix2d::Identity();
+
+    Eigen::Vector2d delta = -H.ldlt().solve(g_norm);
+    Eigen::Vector2d s_new = s + delta;
+
+    // Apply constraints
+    s_new.x() = std::max(-position_limit, std::min(position_limit, s_new.x()));
+    s_new.y() = std::max(-position_limit, std::min(position_limit, s_new.y()));
+
+    double old_error = g.squaredNorm();
+    double new_error = 0.0;
+
+    for (int i = 0; i < N; ++i) {
+      new_error += std::pow((s_new - positions[i].head<2>()).norm() - distances[i], 2);
+    }
+
+    // LM adaptive damping
+    if (new_error < old_error) {
+      // Accept step
+      s = s_new;
+      lambda *= 0.5;  // decrease damping (trusting model more)
+    } else {
+      // Reject step
+      lambda *= 2.0;  // increase damping (trust model less)
+    }
+
+    if (delta.norm() < convergence_tol) {
+      break;
     }
   }
 
-  return Eigen::Vector3d(best_s.x(), best_s.y(), 0.0);
+  return Eigen::Vector3d(s.x(), s.y(), 0.0);
 }
+
+// Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
+//                                            const Eigen::VectorXd &distances) {
+//   const int N = static_cast<int>(positions.size());
+
+//   const int n_restarts = 5;                 // try multiple initial guesses
+//   const int max_iterations = 200;
+//   const double damping_initial = 1e-2;
+//   const double convergence_tol = 1e-6;
+//   const double position_limit = 90.0;
+
+//   Eigen::Vector2d best_s;
+//   double best_error = std::numeric_limits<double>::max();
+
+//   for (int restart = 0; restart < n_restarts; ++restart) {
+//     // --- Initialize s: average + small random offset ---
+//     Eigen::Vector2d s = Eigen::Vector2d::Zero();
+//     for (const auto &p : positions) s += p.head<2>();
+//     s /= N;
+//     s += Eigen::Vector2d::Random() * 5.0;  // randomize ±5 m
+
+//     double lambda = damping_initial;
+
+//     // --- Levenberg-Marquardt optimization ---
+//     for (int iter = 0; iter < max_iterations; ++iter) {
+//       Eigen::VectorXd g(N);
+//       Eigen::MatrixXd J(N, 2);
+//       for (int i = 0; i < N; ++i) {
+//         Eigen::Vector2d diff = s - positions[i].head<2>();
+//         double norm = std::max(diff.norm(), 1e-8);
+//         g(i) = norm - distances[i];
+//         J.row(i) = diff.transpose() / norm;
+//       }
+
+//       Eigen::Matrix2d H = J.transpose() * J + lambda * Eigen::Matrix2d::Identity();
+//       Eigen::Vector2d step = -H.ldlt().solve(J.transpose() * g);
+//       Eigen::Vector2d s_new = s + step;
+//       s_new.x() = std::clamp(s_new.x(), -position_limit, position_limit);
+//       s_new.y() = std::clamp(s_new.y(), -position_limit, position_limit);
+
+//       double old_error = g.squaredNorm();
+//       double new_error = 0.0;
+//       for (int i = 0; i < N; ++i)
+//         new_error += std::pow((s_new - positions[i].head<2>()).norm() - distances[i], 2);
+
+//       if (new_error < old_error) {
+//         s = s_new;
+//         lambda *= 0.7;
+//       } else {
+//         lambda *= 2.0;
+//       }
+
+//       if (step.norm() < convergence_tol) break;
+//     }
+
+//     // --- Keep best solution ---
+//     double final_error = 0.0;
+//     for (int i = 0; i < N; ++i)
+//       final_error += std::pow((s - positions[i].head<2>()).norm() - distances[i], 2);
+
+//     if (final_error < best_error) {
+//       best_error = final_error;
+//       best_s = s;
+//     }
+//   }
+
+//   return Eigen::Vector3d(best_s.x(), best_s.y(), 0.0);
+// }
 
 /* update() //{ */
 
@@ -398,7 +398,8 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
   //|------------ Avarage multilateration estimation --------------|
   Eigen::Vector3d target_position(0.0, 0.0, 0.0);
   
-  if(!initial_sequence_) target_position = multilateration(abs_positions, distances_avg);
+  // if(!initial_sequence_)
+  target_position = multilateration(abs_positions, distances_avg);
 
   static std::deque<Eigen::Vector3d> target_buffer;
   static const size_t max_samples = 50; // 50 * 10 Hz = 5s
@@ -464,9 +465,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 100: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(3.0, 0.0, 1.0));
-      formation_line.push_back(Eigen::Vector3d(-3.0, 0.0, 4.0));
-      formation_line.push_back(Eigen::Vector3d(0.0, 3.0, 6.0));
+      formation_line.push_back(Eigen::Vector3d(3.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(-3.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 3.0, 3.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -487,9 +488,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 0: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-3.0, 0.5, 1.0));
-      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 4.0));
-      formation_line.push_back(Eigen::Vector3d(3.0, -0.5, 6.0));
+      formation_line.push_back(Eigen::Vector3d(-3.0, 0.5, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(3.0, -0.5, 3.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
@@ -573,9 +574,9 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 3: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 1.0));
-      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 4.0));
-      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 6.0));
+      formation_line.push_back(Eigen::Vector3d(-0.5, 3.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(0.5, -3.0, 3.0));
 
       std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
