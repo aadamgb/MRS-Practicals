@@ -7,65 +7,215 @@ namespace task_02_formation
 // |                    the library interface                   |
 // --------------------------------------------------------------
 
-std::vector<int> hungarianSolve(const std::vector<std::vector<double>> &cost) {
-  int n = cost.size();
-  int m = cost[0].size();
-  int dim = std::max(n, m);
-  std::vector<std::vector<double>> a(dim, std::vector<double>(dim, 0.0));
+// |---- Munkers assignment algorithm ---------------|
 
-  for (int i = 0; i < n; ++i)
-    for (int j = 0; j < m; ++j)
-      a[i][j] = cost[i][j];
+static constexpr double EPS = 1e-6;
 
-  std::vector<double> u(dim + 1), v(dim + 1);
-  std::vector<int> p(dim + 1), way(dim + 1);
-
-  for (int i = 1; i <= dim; ++i) {
-    p[0] = i;
-    int j0 = 0;
-    std::vector<double> minv(dim + 1, std::numeric_limits<double>::infinity());
-    std::vector<char> used(dim + 1, false);
-    do {
-      used[j0] = true;
-      int i0 = p[j0], j1 = 0;
-      double delta = std::numeric_limits<double>::infinity();
-      for (int j = 1; j <= dim; ++j) {
-        if (used[j]) continue;
-        double cur = a[i0 - 1][j - 1] - u[i0] - v[j];
-        if (cur < minv[j]) {
-          minv[j] = cur;
-          way[j] = j0;
-        }
-        if (minv[j] < delta) {
-          delta = minv[j];
-          j1 = j;
-        }
-      }
-      for (int j = 0; j <= dim; ++j) {
-        if (used[j]) {
-          u[p[j]] += delta;
-          v[j] -= delta;
-        } else {
-          minv[j] -= delta;
-        }
-      }
-      j0 = j1;
-    } while (p[j0] != 0);
-    do {
-      int j1 = way[j0];
-      p[j0] = p[j1];
-      j0 = j1;
-    } while (j0);
-  }
-
-  std::vector<int> assignment(n, -1);
-  for (int j = 1; j <= dim; ++j)
-    if (p[j] <= n && j <= m)
-      assignment[p[j] - 1] = j - 1;
-  return assignment;
+static bool isZero(double value) {
+    return std::abs(value) < EPS;
 }
 
-// *CREDITS: hungarianSolve algorithm produced by an LLM, the res of the code is my production*
+
+// Find smallest uncovered value of the cost matrix
+double smallestUncoveredValue(
+    const std::vector<std::vector<double>>& cost, 
+    const std::vector<bool>& row_covered, 
+    const std::vector<bool>& col_covered) {
+
+    int n = cost.size();
+    double min = std::numeric_limits<double>::infinity();
+    for (int i = 0; i < n; i++) {
+        if (!row_covered[i]){
+            for (int j = 0; j < n; j++){
+                if(!col_covered[j] && cost[i][j] < min) min = cost[i][j];
+            }
+        }
+    }
+
+    return min;
+}
+
+// Try for different avaliable assignments by aguemnting the path (flip stars and primes)
+void augmentPath(
+    std::vector<std::vector<bool>>& star,
+    std::vector<std::vector<bool>>& prime,
+    int start_row,
+    int start_col) {
+    std::vector<std::pair<int, int>> path;
+    path.emplace_back(start_row, start_col);
+
+    int n = star.size();
+    int r = start_row;
+    int c = start_col;
+    bool done = false;
+
+    // zig-zag loop between primed and stared zeros position that are pushed to the path vector
+    while (!done) {
+        int star_row = -1;
+        for (int i = 0; i < n; i++){
+            if (star[i][c]){
+                star_row = i;  // find stars in start column
+                break;
+            }
+        }
+
+        if (star_row == -1){
+            done = true;
+        } else {
+            path.emplace_back(star_row, c);
+
+            int prime_col = -1;
+            for (int j = 0; j < n; j++) {
+                if (prime[star_row][j]) {
+                    prime_col = j; // find primed zeros in found star row
+                    break;
+                }
+            }
+
+            if (prime_col == -1) {
+                done = true;
+            } else {
+                c = prime_col;
+                path.emplace_back(star_row, prime_col);
+
+            }
+        }
+    }
+
+    // now flip stars and primes of the path
+    for (auto [i, j] : path) {
+        star[i][j] = !star[i][j];
+    }
+
+    // clear all primes
+    for (auto& row : prime) {
+        std::fill(row.begin(), row.end(), false);
+    }
+
+}
+
+std::vector<int> Hungarian(std::vector<std::vector<double>> cost) {
+    int n = cost.size();
+    if (n == 0) return {};
+    
+    
+    // Step 1: Subtract row minima
+    for (int i = 0; i < n; i++) {
+        double min_val = *std::min_element(cost[i].begin(), cost[i].end());
+        for (int j = 0; j < n; j++)
+            cost[i][j] -= min_val;
+    }
+    
+    // Step 2: Subtract column minima
+    for (int j = 0; j < n; j++) {
+        double min_val = cost[0][j];
+        for (int i = 1; i < n; i++)
+            min_val = std::min(min_val, cost[i][j]);
+        for (int i = 0; i < n; i++)
+            cost[i][j] -= min_val;
+    }
+
+    // Prepare variables for zeros search
+    std::vector<bool> row_covered(n, false), col_covered(n, false);             // track if row and col are covered
+    std::vector<std::vector<bool>> star(n, std::vector<bool>(n, false));        // assign potential zero
+    std::vector<std::vector<bool>> prime(n, std::vector<bool>(n, false));       // assign uncovered zeros
+    
+    // Star initial zeros
+    for (int i = 0; i < n; i++) {
+        for(int j = 0; j < n; j ++){
+            if(isZero(cost[i][j]) && !row_covered[i] && !col_covered[j]){
+                row_covered[i] = true;
+                col_covered[j] = true; 
+                star[i][j] = true;
+                break;
+            }
+        }
+    }
+
+    std::fill(row_covered.begin(), row_covered.end(), false);                  // reset covered row tracker  
+    std::fill(col_covered.begin(), col_covered.end(), false);                  // reset covered col tracker 
+
+
+    // |--- Main Loop----|
+    //   Steps 3, 4, 5 
+    while(true) {
+        // Step 3: cover columns with stared zeros
+        for (int i = 0; i < n; i++) {
+            for(int j = 0; j < n; j ++){
+                if(star[i][j]) col_covered[j] = true;
+                // break;
+            }
+        }
+
+        int potential_assignment = std::count(col_covered.begin(), col_covered.end(), true);
+        if (potential_assignment == n) break; // final assignment found!!
+            
+        // Step 4: col lines < n, search for row lines 
+        bool done = false;
+        int uZ_row = -1, uZ_col = -1;  // position of the uncovered zero with no stared zero on its row
+
+        while (!done) {
+            bool found = false;
+            for (int i = 0; i < n && !found; i++) {
+                if (!row_covered[i]){
+                    for (int j = 0; j < n; j++) {
+                        if (!col_covered[j] && isZero(cost[i][j])) {
+                            prime[i][j] = true;
+
+                            bool star_in_row = false; // only augment path if no stared zeros are found in this row
+                            for (int k = 0; k < n; k++) {
+                                if(star[i][k]) {
+                                    star_in_row = true;
+                                    row_covered[i] = true;
+                                    col_covered[k] = true;
+                                    break; 
+                                }
+                            }
+
+                            if (!star_in_row){
+                                uZ_row = i; uZ_col = j;
+                                augmentPath(star, prime, uZ_row, uZ_col); // will star prime zeros and unstar stared zeros of that row
+                                std::fill(row_covered.begin(), row_covered.end(), false);
+                                std::fill(col_covered.begin(), col_covered.end(), false);
+                                done = true; // we can check new assignment
+                            }
+
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Step 5: Adjust cost matrix (shift zeros)
+            if (!found) {
+                double min = smallestUncoveredValue(cost, row_covered, col_covered);
+                for (int i = 0; i < n; i++){
+                    for (int j = 0; j < n; j++){
+                        if(row_covered[i]) cost[i][j] += min;
+                        if(!col_covered[j]) cost[i][j] -= min;
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 6: Return the final assignment vector
+    std::vector<int> final_assignment(n, -1);
+    for (int i = 0; i < n; i++) {
+        for(int j = 0; j < n; j ++){
+            if(star[i][j]){
+                final_assignment[i] = j;
+                break;
+            }
+        }
+    }
+
+    return final_assignment; 
+}
+
+
+
 
 /* init() //{ */
 
@@ -113,7 +263,7 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
   int n_uavs = initial_states.size();
   action_handlers_.visualizeCube(Position_t{0, 0, 0}, Color_t{0.0, 0.0, 1.0, 0.05}, 1.0);
 
-  // | --- Step 1: Assign optimally goals to starts with the Hungarian Algorithm --- |
+  // Step 1: Assign optimally goals to starts with the Hungarian Algorithm
 
   // 1.1 Calculate cost matrix (Eculidean distance between start and goal 
   std::vector<std::vector<double>> cost(n_uavs, std::vector<double>(n_uavs));
@@ -124,9 +274,9 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
   }
 
   // 1.2 Apply the Hungarian algorithm
-  std::vector<int> assignment = hungarianSolve(cost);
+  std::vector<int> assignment = Hungarian(cost);
 
-  // | --- Step 2: Use A* to find paths from starts to goals --- |
+  // Step 2: Use A* to find paths from starts to goals
 
   // 2.1 Initialize the algorithm and paths vectop
   const double resolution = 0.6;                         // grid resolution
@@ -189,8 +339,7 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
     } else {
       printf("[WARN] Path not found for UAV %d\n", i);
     }
-
-    // | --- Step 3: Straighten path (not required) --- |
+    // Step 3: Straighten path (not required)
     std::vector<Eigen::Vector3d> straightened_path;
     if (!path.empty()) {
       straightened_path.push_back(path.front());
@@ -209,7 +358,7 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
       }
     }
 
-    // --- Now inflate the (straightened) path into the global obstacles set ---
+    // inflate the (straightened path into the global obstacles set ---
     int expand_cells = static_cast<int>(std::ceil(separation / resolution));
     for (const auto &pt : straightened_path) {
       astar::Cell center = astar.toGrid(pt.x(), pt.y(), pt.z());
@@ -220,20 +369,21 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
             obstacles.insert(neighbor);
           }
     }
+
     paths.push_back(straightened_path);
-
     // paths.push_back(path);
+
   }
 
-  // Optional: visualize all obstacles at the end
-  for (const auto& obstacle : obstacles) {
-    astar::Position pos = astar.fromGrid(obstacle);
-    action_handlers_.visualizeCube(
-      Position_t{pos.x(), pos.y(), pos.z()},
-      Color_t{1.0, 0.5, 0.0, 0.05},  // red transparent
-      resolution
-    );
-  }
+  // // (Optional) visualize all obstacles at the end
+  // for (const auto& obstacle : obstacles) {
+  //   astar::Position pos = astar.fromGrid(obstacle);
+  //   action_handlers_.visualizeCube(
+  //     Position_t{pos.x(), pos.y(), pos.z()},
+  //     Color_t{1.0, 0.5, 0.0, 0.05},  
+  //     resolution
+  //   );
+  // }
 
   return paths;
 }
@@ -250,7 +400,6 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
  *
  * @return the estimated 3D position of the source of radiation.
  */
-// Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions, const Eigen::VectorXd &distances) {
 
 //   // THIS IS THE MOST BASIC OPTIMIZATION FOR THE POSITION OF THE ROBOT
 //   // The method can be improved significantly by:
@@ -258,48 +407,6 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
 //   // * trying multiple different initial conditions (xk)
 //   // * not optimizing for the full 3D position of the robot, we know that the robot rides on the ground, z = 0
 //   // * using better optimization method (LM)
-
-//   const int N = int(positions.size());
-
-//   Eigen::MatrixXd J = Eigen::MatrixXd::Zero(N, 3);
-//   Eigen::MatrixXd g = Eigen::VectorXd::Zero(N);
-
-//   // the solution... initialized as (0, 0, 0)^T, is it a good initialization?
-//   Eigen::Vector3d s = Eigen::Vector3d(0, 0, 0);
-
-//   const int max_iterations = 80;
-
-//   for (int n_iterations = 0; n_iterations < max_iterations; n_iterations++) {
-
-//     for (int j = 0; j < N; j++) {
-
-//       J.row(j) = (s - positions[j]) / (s - positions[j]).norm();
-//     }
-
-//     // distance from xk to the sphere with radius distances[i] and center positions[i]
-//     for (int i = 0; i < N; i++) {
-//       g(i) = (s - positions[i]).norm() - distances[i];
-//     }
-
-//     // do the Gauss-Newton iteration
-//     s = s - (J.transpose() * J).inverse() * J.transpose() * g;
-
-//     // Clamp X and Y, fix Z = 0
-//     double limit = 100.0;
-
-//     // Apply only to x and y
-//     s.x() = std::max(-limit, std::min(limit, s.x()));
-//     s.y() = std::max(-limit, std::min(limit, s.y()));
-
-//     // Force z to be exactly 0 (ground constraint)
-//     s.z() = 0.0;
-//   }
-
-//   return s;
-// }
-
-//}
-
 
 Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
                                            const Eigen::VectorXd &distances) {
