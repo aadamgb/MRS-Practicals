@@ -463,25 +463,25 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
   switch (user_defined_variable_) {
 
     case 100: {
-    std::vector<Eigen::Vector3d> formation_line;
-    formation_line.push_back(Eigen::Vector3d(3.0, 0.0, 1.0));
-    formation_line.push_back(Eigen::Vector3d(-3.0, 0.0, 4.0));
-    formation_line.push_back(Eigen::Vector3d(0.0, 3.0, 6.0));
+      std::vector<Eigen::Vector3d> formation_line;
+      formation_line.push_back(Eigen::Vector3d(3.0, 0.0, 1.0));
+      formation_line.push_back(Eigen::Vector3d(-3.0, 0.0, 4.0));
+      formation_line.push_back(Eigen::Vector3d(0.0, 3.0, 6.0));
 
-    std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
+      std::vector<std::vector<Eigen::Vector3d>> paths = getPathsReshapeFormation(formation_state.followers, formation_line);
 
-    bool success = action_handlers.reshapeFormation(paths);
+      bool success = action_handlers.reshapeFormation(paths);
 
-    if (!success) {
-      printf("something went wrong while reshaping the formation\n");
-      return;
-    } else {
-      printf("First move\n");
-    }
+      if (!success) {
+        printf("something went wrong while reshaping the formation\n");
+        return;
+      } else {
+        printf("First move\n");
+      }
 
-    user_defined_variable_ = 0;
+      user_defined_variable_ = 0;
 
-    break;
+      break;
     }
 
 
