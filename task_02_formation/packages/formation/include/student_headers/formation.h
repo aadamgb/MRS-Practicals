@@ -71,7 +71,7 @@ private:
 
   int user_defined_variable_ = 0;
   bool h_, v_, initial_sequence_, init_flag_, is_right_, is_up_;
-  double closest_v_, closest_h_;
+  double closest_v_, closest_h_, a_;
 
   // enum class states
   // {

@@ -19,6 +19,7 @@ void Formation::init() {
   user_defined_variable_ = 100;
   closest_v_ = std::numeric_limits<double>::max();
   closest_h_ = std::numeric_limits<double>::max();
+  a_= 10.0;
 }
 
 //}
@@ -56,22 +57,41 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
   std::vector<int> assignment(n_uavs, -1);
   std::vector<bool> goal_assigned(n_uavs, false);
 
-  for (int i = 0; i < n_uavs; i++){
-    double min = std::numeric_limits<double>::max();
+  // find the initial state closest to (0.0, 0.0, 3.0) and process it first
+  int first_idx = 0;
+  double min_norm = std::numeric_limits<double>::max();
+  Eigen::Vector3d reference_point(0.0, 0.0, 3.0);
+  // Eigen::Vector3d reference_point(0.0, 0.0, 0.0);
+  for (int i = 0; i < n_uavs; ++i) {
+    double norm = (initial_states[i] - reference_point).norm();
+    if (norm < min_norm) {
+      min_norm = norm;
+      first_idx = i;
+    }
+  }
+
+  // build processing order: start with the closest-to-origin UAV, then the rest
+  std::vector<int> order;
+  order.reserve(n_uavs);
+  order.push_back(first_idx);
+  for (int i = 0; i < n_uavs; ++i) {
+    if (i == first_idx) continue;
+    order.push_back(i);
+  }
+
+  for (int idx : order) {
+    double best_dist = std::numeric_limits<double>::max();
     int best_goal = -1;
-
-    for(int j = 0; j < n_uavs; j++){
-      if(goal_assigned[j]) continue;
-
-      double c = (initial_states[i] - final_states[j]).norm();
-      if (c < min){
-        min = c;
-       best_goal = j;
+    for (int j = 0; j < n_uavs; ++j) {
+      if (goal_assigned[j]) continue;
+      double d = (initial_states[idx] - final_states[j]).norm();
+      if (d < best_dist) {
+        best_dist = d;
+        best_goal = j;
       }
     }
-
-    if(best_goal != -1) {
-      assignment[i] = best_goal;
+    if (best_goal != -1) {
+      assignment[idx] = best_goal;
       goal_assigned[best_goal] = true;
     }
   }
@@ -158,55 +178,6 @@ std::vector<std::vector<Eigen::Vector3d>> Formation::getPathsReshapeFormation(
  *
  * @return the estimated 3D position of the source of radiation.
  */
-// Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions, const Eigen::VectorXd &distances) {
-
-//   // THIS IS THE MOST BASIC OPTIMIZATION FOR THE POSITION OF THE ROBOT
-//   // The method can be improved significantly by:
-//   // * increasing the number of iterations
-//   // * trying multiple different initial conditions (xk)
-//   // * not optimizing for the full 3D position of the robot, we know that the robot rides on the ground, z = 0
-//   // * using better optimization method (LM)
-
-//   const int N = positions.size();
-
-//   Eigen::Vector2d s = Eigen::Vector2d::Zero();
-//   for (const auto &p : positions)
-//     s += p.head<2>();
-//   s /= N;
-
-//   const int max_iterations = 200;
-//   const double limit = 90.0;
-//   const double tol = 1e-6;
-
-//   for (int n_iterations = 0; n_iterations < max_iterations; n_iterations++) {
-//     Eigen::VectorXd g(N);
-//     Eigen::MatrixXd J(N, 2);
-
-//     for (int i = 0; i < N; ++i) {
-//       Eigen::Vector2d diff = s - positions[i].head<2>();
-//       double norm = diff.norm();
-//       J.row(i) = diff.transpose() / norm;
-//       g(i) = norm - distances[i];
-//     }
-
-//     // Avoid division by zero
-//     if (norm < 1e-8) norm = 1e-8;
-
-//     Eigen::Vector2d delta = (J.transpose() * J).ldlt().solve(J.transpose() * g);
-//     s -= delta;
-
-//     s.x() = std::clamp(s.x(), -limit, limit);
-//     s.y() = std::clamp(s.y(), -limit, limit);
-
-//     if (delta.norm() < tol) break;
-//   }
-
-//   return Eigen::Vector3d(s.x(), s.y(), 0.0);
-// }
-
-// }
-
-
 Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
                                            const Eigen::VectorXd &distances) {
   const int N = static_cast<int>(positions.size());
@@ -235,14 +206,13 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
       Eigen::Vector2d diff = s - positions[i].head<2>();
       double diff_norm = diff.norm();
 
-      // Avoid division by zero
-      if (diff_norm < 1e-8) diff_norm = 1e-8;
+
+      if (diff_norm < 1e-8) diff_norm = 1e-8;      // avoid division by zero
 
       g(i) = diff_norm - distances[i];
       J.row(i) = diff.transpose() / diff_norm;
     }
 
-    // Compute LM step
     Eigen::Matrix2d H = J.transpose() * J;
     Eigen::Vector2d g_norm = J.transpose() * g;
 
@@ -251,7 +221,6 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
     Eigen::Vector2d delta = -H.ldlt().solve(g_norm);
     Eigen::Vector2d s_new = s + delta;
 
-    // Apply constraints
     s_new.x() = std::max(-position_limit, std::min(position_limit, s_new.x()));
     s_new.y() = std::max(-position_limit, std::min(position_limit, s_new.y()));
 
@@ -279,74 +248,6 @@ Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &p
 
   return Eigen::Vector3d(s.x(), s.y(), 0.0);
 }
-
-// Eigen::Vector3d Formation::multilateration(const std::vector<Eigen::Vector3d> &positions,
-//                                            const Eigen::VectorXd &distances) {
-//   const int N = static_cast<int>(positions.size());
-
-//   const int n_restarts = 5;                 // try multiple initial guesses
-//   const int max_iterations = 200;
-//   const double damping_initial = 1e-2;
-//   const double convergence_tol = 1e-6;
-//   const double position_limit = 90.0;
-
-//   Eigen::Vector2d best_s;
-//   double best_error = std::numeric_limits<double>::max();
-
-//   for (int restart = 0; restart < n_restarts; ++restart) {
-//     // --- Initialize s: average + small random offset ---
-//     Eigen::Vector2d s = Eigen::Vector2d::Zero();
-//     for (const auto &p : positions) s += p.head<2>();
-//     s /= N;
-//     s += Eigen::Vector2d::Random() * 5.0;  // randomize ±5 m
-
-//     double lambda = damping_initial;
-
-//     // --- Levenberg-Marquardt optimization ---
-//     for (int iter = 0; iter < max_iterations; ++iter) {
-//       Eigen::VectorXd g(N);
-//       Eigen::MatrixXd J(N, 2);
-//       for (int i = 0; i < N; ++i) {
-//         Eigen::Vector2d diff = s - positions[i].head<2>();
-//         double norm = std::max(diff.norm(), 1e-8);
-//         g(i) = norm - distances[i];
-//         J.row(i) = diff.transpose() / norm;
-//       }
-
-//       Eigen::Matrix2d H = J.transpose() * J + lambda * Eigen::Matrix2d::Identity();
-//       Eigen::Vector2d step = -H.ldlt().solve(J.transpose() * g);
-//       Eigen::Vector2d s_new = s + step;
-//       s_new.x() = std::clamp(s_new.x(), -position_limit, position_limit);
-//       s_new.y() = std::clamp(s_new.y(), -position_limit, position_limit);
-
-//       double old_error = g.squaredNorm();
-//       double new_error = 0.0;
-//       for (int i = 0; i < N; ++i)
-//         new_error += std::pow((s_new - positions[i].head<2>()).norm() - distances[i], 2);
-
-//       if (new_error < old_error) {
-//         s = s_new;
-//         lambda *= 0.7;
-//       } else {
-//         lambda *= 2.0;
-//       }
-
-//       if (step.norm() < convergence_tol) break;
-//     }
-
-//     // --- Keep best solution ---
-//     double final_error = 0.0;
-//     for (int i = 0; i < N; ++i)
-//       final_error += std::pow((s - positions[i].head<2>()).norm() - distances[i], 2);
-
-//     if (final_error < best_error) {
-//       best_error = final_error;
-//       best_s = s;
-//     }
-//   }
-
-//   return Eigen::Vector3d(best_s.x(), best_s.y(), 0.0);
-// }
 
 /* update() //{ */
 
@@ -465,7 +366,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 100: {
       std::vector<Eigen::Vector3d> formation_line;
-      formation_line.push_back(Eigen::Vector3d(3.0, 0.0, 3.0));
+      formation_line.push_back(Eigen::Vector3d(3.0, 3.0, 3.0));
       formation_line.push_back(Eigen::Vector3d(-3.0, 0.0, 3.0));
       formation_line.push_back(Eigen::Vector3d(0.0, 3.0, 3.0));
 
@@ -506,6 +407,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
       if(initial_sequence_ && init_flag_) {
         user_defined_variable_ = 1;
+        a_ = 20.0;
       } else if(initial_sequence_ && !init_flag_) {
       user_defined_variable_ = 67;
       } else {
@@ -517,7 +419,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 1: {
       bool success;
-      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::min(formation_state.virtual_leader[0] + 20, 90.0),
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::min(formation_state.virtual_leader[0] + a_, 90.0),
                                                                        formation_state.virtual_leader[1], 0.0));
       if (!success) {
         printf("something went wrong moving the leader\n");
@@ -551,7 +453,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
         user_defined_variable_ = 9;
       }
 
-      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - 20.0, -90.0),
+      success = action_handlers.setLeaderPosition(Eigen::Vector3d(std::max(formation_state.virtual_leader[0] - a_, -90.0),
                                                                        formation_state.virtual_leader[1], 0.0));
 
       if (!success) {
@@ -601,7 +503,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
 
     case 4: {
       bool success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0],
-                                                                       std::min(formation_state.virtual_leader[1] + 20, 90.0), 0.0));
+                                                                       std::min(formation_state.virtual_leader[1] + a_, 90.0), 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
@@ -635,7 +537,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
       }
 
       success = action_handlers.setLeaderPosition(Eigen::Vector3d(formation_state.virtual_leader[0],
-                                                                       std::max(formation_state.virtual_leader[1] - 20.0, -90.0) , 0.0));
+                                                                       std::max(formation_state.virtual_leader[1] - a_, -90.0) , 0.0));
 
       if (!success) {
         printf("something went wrong moving the leader\n");
@@ -750,6 +652,7 @@ void Formation::update(const FormationState_t &formation_state, const Ranging_t 
         printf("Moving 70 m HORIZONTALLY. \n");
         initial_sequence_ = false;
         user_defined_variable_ = 9;
+        a_ = 10.0;
       }
 
       break;
