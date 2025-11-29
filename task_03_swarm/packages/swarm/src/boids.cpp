@@ -70,32 +70,40 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
   Distribution beacon_distribution;
   if (state.nearby_beacon) {
     beacon_distribution = state.beacon_distribution; // R G B O (0,1,0,0)  it thinks is green with 50% chance
+    my_distribution = beacon_distribution;
   }
+
+  // std::cout << "My distribution is: " << my_distribution << std::endl;
+
 
   // | ----------- NEIGHBOUR ITERATION LOOP ------------------- |
   for (const auto &n_state : state.neighbors_states) {
-
     auto &[n_pos_rel, n_vel_global, n_distribution] = n_state;
-    double n_dist = n_pos_rel.norm();
 
+    double n_dist = n_pos_rel.norm();
     if (n_dist < 0.01) n_dist = 0.01; // prevent dividing by zero
 
-    
     if (n_dist < (MIN_DIST_LIMIT + SAFETY_BUFFER)) {
       collision_risk = true;
       f_s += -n_pos_rel.normalized() / (n_dist * n_dist);
     }
 
     if(!collision_risk){
-      f_a += n_vel_global;
-      f_c += n_pos_rel;
-      f_s += -n_pos_rel.normalized() / n_dist;
+      f_a +=   n_vel_global;
+      f_c +=   n_pos_rel;
+      f_s += - n_pos_rel.normalized() / n_dist;
     }
 
     // check if the size of my prob. distribution matches the size of the neighbour's distribution
     if (dim != n_distribution.dim()) {
       std::cout << "This should never happen. If it did, you set the previous distribution wrongly." << std::endl;
     }
+
+    my_distribution.add(0, n_distribution.get(0));
+    my_distribution.add(1, n_distribution.get(1));
+    my_distribution.add(2, n_distribution.get(2));
+    my_distribution.add(3, n_distribution.get(3));
+   
   }
 
 
@@ -103,7 +111,7 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
   if (collision_risk){
     // Only separation force saturated
     action = f_s * 500.0;
-    
+
   } else if (n_neighbours > 0) {
     // Nominal case
     f_a.normalize();
@@ -124,7 +132,7 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
   if(state.nearby_beacon) {
     my_distribution = state.beacon_distribution;
   } else {
-    my_distribution.set(1, 1.0);
+    my_distribution.normalize();
   }
 
   // | ---------------------- DEBUG PRINTS ------------------------ |
