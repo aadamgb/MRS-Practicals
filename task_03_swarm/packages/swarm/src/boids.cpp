@@ -46,8 +46,19 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
 
   // Setup the output action
   Eigen::Vector3d action = Eigen::Vector3d::Zero();
-  Eigen::Vector3d target = state.target;
+  Eigen::Vector3d target = state.target; 
 
+  // Boids forces 
+  Eigen::Vector3d f_a  = Eigen::Vector3d::Zero();  // alignment
+  Eigen::Vector3d f_c  = Eigen::Vector3d::Zero();  // cohesion
+  Eigen::Vector3d f_s  = Eigen::Vector3d::Zero();  // separation
+  int n_neighbours =  state.neighbors_states.size();
+
+  // Hard safety limit
+  const double MIN_DIST_LIMIT = 0.3;
+  const double SAFETY_BUFFER = 0.05; 
+  bool collision_risk = false;
+  
   // Call custom functions, e.g., useful for dynamic weighting
   [[maybe_unused]] double x = multiply(5.0, 10.0);
 
@@ -58,16 +69,28 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
   // Am I nearby a beacon?
   Distribution beacon_distribution;
   if (state.nearby_beacon) {
-    beacon_distribution = state.beacon_distribution;
+    beacon_distribution = state.beacon_distribution; // R G B O (0,1,0,0)  it thinks is green with 50% chance
   }
 
-  // Iterate over the states of the visible neighbors
+  // | ----------- NEIGHBOUR ITERATION LOOP ------------------- |
   for (const auto &n_state : state.neighbors_states) {
 
     auto &[n_pos_rel, n_vel_global, n_distribution] = n_state;
+    double n_dist = n_pos_rel.norm();
 
-    // distance to the neighbour
-    [[maybe_unused]] double n_dist = n_pos_rel.norm();
+    if (n_dist < 0.01) n_dist = 0.01; // prevent dividing by zero
+
+    
+    if (n_dist < (MIN_DIST_LIMIT + SAFETY_BUFFER)) {
+      collision_risk = true;
+      f_s += -n_pos_rel.normalized() / (n_dist * n_dist);
+    }
+
+    if(!collision_risk){
+      f_a += n_vel_global;
+      f_c += n_pos_rel;
+      f_s += -n_pos_rel.normalized() / n_dist;
+    }
 
     // check if the size of my prob. distribution matches the size of the neighbour's distribution
     if (dim != n_distribution.dim()) {
@@ -75,19 +98,47 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
     }
   }
 
-  // Example: scale the action by user parameter
-  action = user_params.param1 * target;
 
-  // Print the output action
-  printVector3d(action, "Action: ");
+  // | ----------- BOIDS ACTIONS CALCULATIONS ------------------- |
+  if (collision_risk){
+    // Only separation force saturated
+    action = f_s * 500.0;
+    
+  } else if (n_neighbours > 0) {
+    // Nominal case
+    f_a.normalize();
+    f_c = (f_c / n_neighbours).normalized();
+    // f_s = - sum_p_rel / n_neighbours;
+
+   action = (f_a * user_params.param1 + f_c * user_params.param2 + f_s * user_params.param3) + target * user_params.param9;
+
+ } else {
+    // No neighbour, just go for the target
+    action = target * user_params.param9;
+  }
 
   // Visualize the arrow in RViz
-  action_handlers.visualizeArrow("action", action, Color_t{0.0, 0.0, 0.0, 1.0});
+  action_handlers.visualizeArrow("action", action*4, Color_t{1.0, 0.0, 0.0, 1.0});
 
   // | -------------------- EXAMPLE CODE END -------------------- |
+  if(state.nearby_beacon) {
+    my_distribution = state.beacon_distribution;
+  } else {
+    my_distribution.set(1, 1.0);
+  }
+
+  // | ---------------------- DEBUG PRINTS ------------------------ |
+  // printVector3d(action, "Action: ");
+  // printVector3d(f_a, "Velocity alignment: ");
+  // std::cout << "My distribution: " << my_distribution << std::endl;
 
   return {action, my_distribution};
 }
+
+
+
+
+
 
 //}
 

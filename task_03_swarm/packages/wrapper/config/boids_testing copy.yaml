@@ -3,21 +3,19 @@ version: "1.0.0"
 # FEEL FREE TO PLAY WITH THIS CONFIG FILE
 # BUT BEWARE THAT IT WON'T BE OVERWRITTEN DURING EVALUATION
 
-# rate: 30                 # (Hz): use to slow down or speed up the simulation
 rate: 30                 # (Hz): use to slow down or speed up the simulation
 stop_after_finish: false # If to stop the task once it fails
 
 # VALIDATION
 validation:
   max_dead_ratio: 0.3 # if dead/alive exceeds this threshold, task fails
-  # max_iterations: 3600 # 2 * 60 * 30 (2 min if run at 30 Hz)
-  max_iterations: 6600 # 2 * 60 * 30 (2 min if run at 30 Hz)
+  max_iterations: 3600 # 2 * 60 * 30 (2 min if run at 30 Hz)
 
 # AGENTS
 agents:
 
-  count: 50 # number of agents
-  # count: 100 # number of agents
+  # count: 50 # number of agents
+  count: 1 # number of agents
 
   neighborhood:
     radius: 1.5 # visibility radius
