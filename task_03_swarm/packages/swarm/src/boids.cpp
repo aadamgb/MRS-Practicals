@@ -66,16 +66,6 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
   Distribution my_distribution = state.distribution;
   int          dim             = my_distribution.dim();
 
-  // Am I nearby a beacon?
-  Distribution beacon_distribution;
-  if (state.nearby_beacon) {
-    beacon_distribution = state.beacon_distribution; // R G B O (0,1,0,0)  it thinks is green with 50% chance
-    my_distribution = beacon_distribution;
-  }
-
-  // std::cout << "My distribution is: " << my_distribution << std::endl;
-
-
   // | ----------- NEIGHBOUR ITERATION LOOP ------------------- |
   for (const auto &n_state : state.neighbors_states) {
     auto &[n_pos_rel, n_vel_global, n_distribution] = n_state;
@@ -99,13 +89,16 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
       std::cout << "This should never happen. If it did, you set the previous distribution wrongly." << std::endl;
     }
 
-    my_distribution.add(0, n_distribution.get(0));
-    my_distribution.add(1, n_distribution.get(1));
-    my_distribution.add(2, n_distribution.get(2));
-    my_distribution.add(3, n_distribution.get(3));
+    // Adding neighbours distributions
+    for (int i = 0; i < 4; i++){
+      my_distribution.add(i, n_distribution.get(i));
+    }
+    // my_distribution.add(0, n_distribution.get(0));
+    // my_distribution.add(1, n_distribution.get(1));
+    // my_distribution.add(2, n_distribution.get(2));
+    // my_distribution.add(3, n_distribution.get(3));
    
   }
-
 
   // | ----------- BOIDS ACTIONS CALCULATIONS ------------------- |
   if (collision_risk){
@@ -116,11 +109,9 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
     // Nominal case
     f_a.normalize();
     f_c = (f_c / n_neighbours).normalized();
-    // f_s = - sum_p_rel / n_neighbours;
+    action = (f_a * user_params.param1 + f_c * user_params.param2 + f_s * user_params.param3) + target * user_params.param9;
 
-   action = (f_a * user_params.param1 + f_c * user_params.param2 + f_s * user_params.param3) + target * user_params.param9;
-
- } else {
+  } else {
     // No neighbour, just go for the target
     action = target * user_params.param9;
   }
@@ -128,7 +119,7 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
   // Visualize the arrow in RViz
   action_handlers.visualizeArrow("action", action*4, Color_t{1.0, 0.0, 0.0, 1.0});
 
-  // | -------------------- EXAMPLE CODE END -------------------- |
+  // | -------------------- SETTING DISTRIBUTIONS -------------------- |
   if(state.nearby_beacon) {
     my_distribution = state.beacon_distribution;
   } else {

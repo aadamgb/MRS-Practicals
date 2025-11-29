@@ -14,8 +14,8 @@ validation:
 # AGENTS
 agents:
 
-  # count: 50 # number of agents
-  count: 1 # number of agents
+  count: 50 # number of agents
+
 
   neighborhood:
     radius: 1.5 # visibility radius

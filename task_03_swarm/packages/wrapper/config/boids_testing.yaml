@@ -10,8 +10,7 @@ stop_after_finish: false # If to stop the task once it fails
 # VALIDATION
 validation:
   max_dead_ratio: 0.3 # if dead/alive exceeds this threshold, task fails
-  # max_iterations: 3600 # 2 * 60 * 30 (2 min if run at 30 Hz)
-  max_iterations: 6600 # 2 * 60 * 30 (2 min if run at 30 Hz)
+  max_iterations: 3600 # 2 * 60 * 30 (2 min if run at 30 Hz)
 
 # AGENTS
 agents:
