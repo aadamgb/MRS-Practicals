@@ -62,13 +62,16 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
   Eigen::Vector3d vec_action = Eigen::Vector3d::Zero();
 
   // Access the perception struct
-  double          current_time   = perception.time;
-  Eigen::Vector3d vec_navigation = perception.target_vector;
-  Eigen::Vector3d vec_separation = Eigen::Vector3d::Zero();
+  double          current_time    = perception.time;
+  Eigen::Vector3d vec_navigation  = perception.target_vector;
+  // Eigen::Vector3d vec_alignment   = Eigen::Vector3d::Zero();
+  Eigen::Vector3d vec_cohesion    = Eigen::Vector3d::Zero();
+  Eigen::Vector3d vec_separation  = Eigen::Vector3d::Zero();
 
   // Access custom parameters
   double param1 = user_params.param1;
   double param2 = user_params.param2;
+  double param3 = user_params.param3;
 
   // Variables initialization
   bool compute_action = false;
@@ -125,6 +128,7 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
       if (direction_agreed) {
         std::cout << "Selected direction: " << directionToString(_navigation_direction_) << std::endl;
+        compute_action = true;
       }
 
       break;
@@ -143,15 +147,17 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
       Eigen::Vector3d n_pos  = n.position;
       double          n_dist = n_pos.norm();
 
+      vec_cohesion += n_pos;
+
       // You may want to use the weighting function you should have prepared first
       bool   weight_defined;
       double weight;
       std::tie(weight_defined, weight) = weightingFunction(n_dist, _visibility_radius_, SAFETY_DISTANCE_UAVS, DESIRED_DISTANCE_UAVS);
 
       if (weight_defined) {
-        // probably use the weight
+        vec_separation += -n_pos * weight;
       } else {
-        // possibly use some backup weight
+        vec_separation += Eigen::Vector3d(10.0, 10.0, 10.0); 
       }
     }
 
@@ -173,6 +179,11 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     unsigned int closest_gate_idx = selectGateClosest(perception.obstacles);
     auto         closest_gate     = perception.obstacles.gates[closest_gate_idx];
 
+    // std::cout << "Let's see [Fisrt]: " << closest_gate.first << std::endl;
+    // std::cout << "Let's see [Second]: " << closest_gate.second << std::endl;
+
+    vec_separation += -closest_gate.first;
+
     //  the gate for the direction:
     unsigned int gate_in_direction_idx = selectGateInDirection(UP, perception.obstacles);
     auto         gate_in_direction     = perception.obstacles.gates[gate_in_direction_idx];
@@ -180,17 +191,19 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     // | ---------------------- weight forces --------------------- |
     vec_navigation *= param1;
     vec_separation *= param2;
+    vec_cohesion = (vec_cohesion * param3 / perception.neighbors.size());
 
     // | ------------------- sum the subvectors ------------------- |
-    vec_action = vec_navigation + vec_separation;
+    vec_action = vec_navigation + vec_separation + vec_cohesion;
     printVector3d(vec_action, "Action:");
 
     // | ------------------------ visualize ----------------------- |
     action_handlers.visualizeArrow("separation", vec_separation, Color_t{1.0, 0.0, 0.0, 0.5});
+    action_handlers.visualizeArrow("cohesion", vec_cohesion, Color_t{0.0, 1.0, 0.0, 0.5});
     action_handlers.visualizeArrow("navigation", vec_navigation, Color_t{0.0, 0.0, 1.0, 0.5});
   }
 
-  action_handlers.visualizeArrow("target", perception.target_vector, Color_t{1.0, 1.0, 1.0, 0.5});
+  action_handlers.visualizeArrow("target", perception.target_vector * 10.0, Color_t{1.0, 1.0, 1.0, 0.5});
   action_handlers.visualizeArrow("action", vec_action, Color_t{0.0, 0.0, 0.0, 1.0});
 
   // | -------------------- EXAMPLE CODE END -------------------- |
@@ -220,9 +233,8 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 std::tuple<bool, double> Swarm::weightingFunction(const double distance, const double visibility, const double safety_distance,
                                                   [[maybe_unused]] const double desired_distance) {
 
-  // TODO: Filling this function is compulsory!
   double weight;
-  if (safety_distance < distance && distance < visibility) {
+  if (safety_distance < distance && distance <= visibility) {
     weight = 1.0 / (distance - safety_distance);
     return {true, weight};
   } else if (visibility < distance) {
