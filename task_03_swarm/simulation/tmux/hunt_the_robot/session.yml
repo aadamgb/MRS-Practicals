@@ -10,7 +10,7 @@ windows:
   - gazebo:
       layout: tiled
       panes:
-        - waitForRos; roslaunch task_03_gazebo_resources simulation.launch gui:=true
+        - waitForRos; roslaunch task_03_gazebo_resources simulation.launch gui:=false
         - export UAV_NAME="uav1"; waitForOdometry; gz camera -c gzclient_camera -f uav1
   - spawn:
       layout: tiled

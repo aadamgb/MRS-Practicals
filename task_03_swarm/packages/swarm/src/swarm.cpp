@@ -221,8 +221,16 @@ std::tuple<bool, double> Swarm::weightingFunction(const double distance, const d
                                                   [[maybe_unused]] const double desired_distance) {
 
   // TODO: Filling this function is compulsory!
+  double weight;
+  if (safety_distance < distance && distance < visibility) {
+    weight = 1.0 / (distance - safety_distance);
+    return {true, weight};
+  } else if (visibility < distance) {
+    return {true, 0.0};
+  } else {
+    return {false, visibility - distance};
+  }
 
-  return {false, visibility - distance};
 }
 
 //}

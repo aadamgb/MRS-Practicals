@@ -1,14 +1,9 @@
-param1: 10.0
-param2: 5.0
-param3: 3.0
+param1: 10.0    # alignment
+param2: 5.0     # coheison
+param3: 3.0     # separation
 param4: 0.0
-# param1: 3.0   # separation
-# param2: 10.0  # alignment
-# param3: 5.0   # coheison
-# param4: 2.0
-
 param5: 0.0
 param6: 0.0
 param7: 0.0
 param8: 0.0
-param9: 2.0
+param9: 2.0     # target
