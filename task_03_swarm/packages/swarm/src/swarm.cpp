@@ -7,6 +7,8 @@ namespace task_03_swarm
 // |                    the library interface                   |
 // --------------------------------------------------------------
 
+#define PI 3.141516
+
 /* init() //{ */
 
 /**
@@ -63,7 +65,9 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
   // Access the perception struct
   double          current_time    = perception.time;
-  Eigen::Vector3d vec_navigation  = perception.target_vector;
+  // Eigen::Vector3d vec_navigation  = perception.target_vector;
+  Eigen::Vector3d vec_navigation  = Eigen::Vector3d::Zero();
+
   // Eigen::Vector3d vec_alignment   = Eigen::Vector3d::Zero();
   Eigen::Vector3d vec_cohesion    = Eigen::Vector3d::Zero();
   Eigen::Vector3d vec_separation  = Eigen::Vector3d::Zero();
@@ -117,17 +121,24 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
       if (_navigation_direction_ == NONE) {
         _navigation_direction_ = targetToDirection(perception.target_vector);
+        action_handlers.shareVariables(INIT_STATE, _navigation_direction_, 3.1415);
       }
 
       // Compute majority
       std::vector<int> directions                                = {directionToInt(_navigation_direction_)};
+      directions.push_back(perception.neighbors[0].shared_variables.int2);
+      directions.push_back(perception.neighbors[1].shared_variables.int2);
+
       auto             counts                                    = countIntegers(directions);
       [[maybe_unused]] const auto &[majority_idx, majority_freq] = getMajority(counts);
+
+      std::cout << "[DEBUG] Agreed direction: " << directionToString(intToDirection(majority_idx)) 
+      << " by majority of " << majority_freq  << ".\n    " 
+      << "     My selected direction was: " << directionToString(_navigation_direction_) << std::endl;
 
       bool direction_agreed = true;
 
       if (direction_agreed) {
-        std::cout << "Selected direction: " << directionToString(_navigation_direction_) << std::endl;
         compute_action = true;
       }
 
@@ -140,12 +151,15 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
   // STATE MACHINE END
 
   if (compute_action) {
+    // int int1;
 
     // | --------------- Separate from other agents --------------- |
 
     for (const auto &n : perception.neighbors) {
       Eigen::Vector3d n_pos  = n.position;
       double          n_dist = n_pos.norm();
+      //  int1 = n.shared_variables.int1;
+      // std::cout << "Int 1: " << int1 << std::endl;
 
       vec_cohesion += n_pos;
 
@@ -166,8 +180,10 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     auto gates = perception.obstacles.gates;
 
     // You may access the gates relative to your body frame
-    Eigen::Vector3d G1_p = gates[0].first;
-    Eigen::Vector3d G1_n = gates[0].second;
+    Eigen::Vector3d G2_p = gates[1].first;
+    Eigen::Vector3d G2_n = gates[1].second;
+
+    vec_navigation = G2_p + G2_n; // Forces to the gate edges for crossing
 
     // Or you may iterate over them
     for (const auto &G : gates) {
@@ -195,13 +211,24 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
     // | ------------------- sum the subvectors ------------------- |
     vec_action = vec_navigation + vec_separation + vec_cohesion;
+    // JUst Testing, REMOVE THIS LOGIC
+    // if (int1 != 0){
+      
+    //   action_handlers.shareVariables(0, _navigation_direction_, 3.1415);
+    // } else {
+    //   vec_action = Eigen::Vector3d::Zero();
+    //   action_handlers.shareVariables(1, _navigation_direction_, 3.1415);
+    // }
+    
     printVector3d(vec_action, "Action:");
 
     // | ------------------------ visualize ----------------------- |
     action_handlers.visualizeArrow("separation", vec_separation, Color_t{1.0, 0.0, 0.0, 0.5});
     action_handlers.visualizeArrow("cohesion", vec_cohesion, Color_t{0.0, 1.0, 0.0, 0.5});
-    action_handlers.visualizeArrow("navigation", vec_navigation, Color_t{0.0, 0.0, 1.0, 0.5});
-  }
+    action_handlers.visualizeArrow("navigation", vec_navigation, Color_t{0.0, 1.0, 1.0, 0.5});
+    action_handlers.visualizeArrow("G2_p", G2_p, Color_t{0.0, 0.0, 1.0, 0.5});
+    action_handlers.visualizeArrow("G2_n", G2_n, Color_t{0.0, 0.0, 1.0, 0.5});
+  } // end compute action 
 
   action_handlers.visualizeArrow("target", perception.target_vector * 10.0, Color_t{1.0, 1.0, 1.0, 0.5});
   action_handlers.visualizeArrow("action", vec_action, Color_t{0.0, 0.0, 0.0, 1.0});
@@ -254,12 +281,28 @@ std::tuple<bool, double> Swarm::weightingFunction(const double distance, const d
 Direction_t Swarm::targetToDirection(const Eigen::Vector3d &target_vector) {
 
   // TODO: fill if want to use
-  std::cout << "[ERROR] targetToDirection() not implemented. Returning UP by default." << std::endl;
+  // std::cout << "[ERROR] targetToDirection() not implemented. Returning UP by default." << std::endl;
 
   double x = target_vector.x();
   double y = target_vector.y();
 
-  return UP;
+  double angle  = atan2(y,x);
+  std::cout << "[ANGLE] The angle is: " << angle * 180.0 / PI << " deg" << std::endl;
+
+  if (-PI/4.0 < angle && angle <= PI/4.0) {
+    // - 45 deg to + 45 deg -> go RIGHT
+    return RIGHT;
+  } else if (PI/4.0 < angle  && angle <= 3*PI/4.0) {
+    // + 45 deg to + 135 deg -> go UP
+    return UP;
+  } else if (-3*PI/4.0  < angle && angle <= -PI/4.0){
+    // - 45 deg to -135 deg -> go DOWN
+    return DOWN;
+  } else {
+    // + 135 deg + 135 deg -> go LEFT
+    return LEFT;
+  }
+
 }
 
 //}

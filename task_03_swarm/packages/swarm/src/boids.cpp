@@ -74,6 +74,7 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
     if (n_dist < 0.01) n_dist = 0.01; // safety measure; prevent dividing by zero
 
     if (n_dist < (MIN_DIST_LIMIT + SAFETY_BUFFER)) {
+      // collision risk, only take into account f_s
       collision_risk = true;
       // separation force proportional to 1/x^2
       f_s += -n_pos_rel.normalized() / (n_dist * n_dist); 
@@ -100,7 +101,7 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
 
   // | ----------- BOIDS ACTIONS CALCULATIONS ------------------- |
   if (collision_risk){
-    // Only take into account the separation force saturate it to maximal vel. change
+    // Only take into account the separation force saturate it to max v change
     action = f_s * 500.0;
 
   } else if (n_neighbours > 0) {

@@ -1,4 +1,4 @@
-param1: 0.0 # navigation
+param1: 1.0 # navigation
 param2: 0.8 # separation
 param3: 1.0 # cohesion
 param4: 1.0
