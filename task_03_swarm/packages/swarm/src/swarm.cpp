@@ -280,7 +280,6 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     // }
 
     vec_navigation = gate_in_direction.first + gate_in_direction.second; // Forces to the gate edges for crossing
-
     // static int gate_cross_counter = 0;
     // const double eps = 1e-8;
 
@@ -323,14 +322,26 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
    
     
-    double min_gate_norm = std::min(gate_in_direction.first.norm(), gate_in_direction.second.norm());
-    action_handlers.shareVariables(_state_, _navigation_direction_, min_gate_norm);
+    // double min_gate_norm = std::min(gate_in_direction.first.norm(), gate_in_direction.second.norm());
+    double gate_dist = ((gate_in_direction.first + gate_in_direction.second)/2.0).norm();
+    action_handlers.shareVariables(_state_, _navigation_direction_, gate_dist);
+
+    // compute minimum among gate_dist and the two neighbors' dbl values
+    double min_val = std::min({gate_dist,
+                   perception.neighbors[0].shared_variables.dbl,
+                   perception.neighbors[1].shared_variables.dbl});
+
+    // std::cout << "🔎 gate_dist: " << gate_dist
+    //       << " | neighbor0.dbl: " << perception.neighbors[0].shared_variables.dbl
+    //       << " | neighbor1.dbl: " << perception.neighbors[1].shared_variables.dbl
+    //       << " | min_val: " << min_val
+    //       << std::endl;
 
     // std::cout << "[Debug] MY cloesest distance is " << min_gate_norm << std::endl;
     // std::cout << "[Debug] NEGHBOURS distances are " << perception.neighbors[0].shared_variables.dbl
     // <<" m, and " <<   perception.neighbors[1].shared_variables.dbl << " m." << std::endl;
 
-    vec_navigation = vec_navigation.normalized() / (min_gate_norm * min_gate_norm);
+    vec_navigation = vec_navigation.normalized() / (gate_dist * gate_dist);
     vec_cohesion = (vec_cohesion / perception.neighbors.size());
     // vec_separation *= param2;
 
@@ -346,27 +357,16 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     }
     
    
-    // vec_cohesion = (vec_cohesion * param3 / perception.neighbors.size());
 
     // | ------------------- sum the subvectors ------------------- |
     vec_action = vec_navigation * param1 + vec_separation * param2 + vec_cohesion * param3;
-    // JUst Testing, REMOVE THIS LOGIC
-    // if (int1 != 0){
-      
-    //   action_handlers.shareVariables(0, _navigation_direction_, 3.1415);
-    // } else {
-    //   vec_action = Eigen::Vector3d::Zero();
-    //   action_handlers.shareVariables(1, _navigation_direction_, 3.1415);
-    // }
-    
 
-    // printVector3d(vec_action, "Action:");
 
-    // std::cout << "[DEBUG] Current state: " << stateToString(_state_) << std::endl;
-
-    if (current_time - idling_time_init >= 20.0) {
+    if (current_time - idling_time_init >= 10.0 && min_val > 3.0) {
       _state_ = INIT_STATE;
       idling_time_init = current_time;
+      std::cout << "🗳️ VOTING!! Resetting to INIT_STATE 🔁" << std::endl;
+      action_handlers.shareVariables(INIT_STATE, _navigation_direction_, 0.0);
     }
 
 
