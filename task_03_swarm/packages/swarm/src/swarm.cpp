@@ -80,6 +80,8 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
   // Variables initialization
   bool compute_action = false;
 
+  Direction_t selected_gate_dir;
+
   // STATE MACHINE BEGINNING
   switch (_state_) {
 
@@ -121,7 +123,7 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
       if (_navigation_direction_ == NONE) {
         _navigation_direction_ = targetToDirection(perception.target_vector);
-        action_handlers.shareVariables(INIT_STATE, _navigation_direction_, 3.1415);
+        action_handlers.shareVariables(_state_, _navigation_direction_, 3.1415);
       }
 
       // Compute majority
@@ -132,7 +134,9 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
       auto             counts                                    = countIntegers(directions);
       [[maybe_unused]] const auto &[majority_idx, majority_freq] = getMajority(counts);
 
-      std::cout << "[DEBUG] Agreed direction: " << directionToString(intToDirection(majority_idx)) 
+      
+
+      std::cout << "[DEBUG] greed direction: " << directionToString(intToDirection(majority_idx)) 
       << " by majority of " << majority_freq  << ".\n    " 
       << "     My selected direction was: " << directionToString(_navigation_direction_) << std::endl;
 
@@ -140,6 +144,7 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
       if (direction_agreed) {
         compute_action = true;
+        selected_gate_dir = intToDirection(majority_idx);
       }
 
       break;
@@ -152,6 +157,9 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
   if (compute_action) {
     // int int1;
+    double closest_n_dist = std::numeric_limits<double>::max();
+    bool collision_risk = false;
+    bool get_closer = false; 
 
     // | --------------- Separate from other agents --------------- |
 
@@ -171,9 +179,31 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
       if (weight_defined) {
         vec_separation += -n_pos * weight;
       } else {
-        vec_separation += Eigen::Vector3d(10.0, 10.0, 10.0); 
+        vec_separation += -1000.0 * n_pos; // Saturate separation force
       }
+
+      closest_n_dist = std::min(closest_n_dist, n_dist);
     }
+
+    if(closest_n_dist < DESIRED_DISTANCE_UAVS) {
+      collision_risk = true;
+    } else {
+      collision_risk = false;
+    }
+    
+
+    auto mutual_distances = computeMutualDistances(perception.neighbors);
+    std::cout << " ✈️✈️  Mutual distances: [";
+    for (size_t i = 0; i < mutual_distances.size(); i++) {
+      if(mutual_distances[i] < MAX_MUTUAL_DISTANCE) {
+        get_closer = false;
+      } else {
+        get_closer = true;
+      }
+      std::cout << mutual_distances[i];
+      if (i < mutual_distances.size() - 1) std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
 
     // | ----------------- Separate from obstacles ---------------- |
 
@@ -182,8 +212,6 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     // You may access the gates relative to your body frame
     Eigen::Vector3d G2_p = gates[1].first;
     Eigen::Vector3d G2_n = gates[1].second;
-
-    vec_navigation = G2_p + G2_n; // Forces to the gate edges for crossing
 
     // Or you may iterate over them
     for (const auto &G : gates) {
@@ -198,19 +226,61 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     // std::cout << "Let's see [Fisrt]: " << closest_gate.first << std::endl;
     // std::cout << "Let's see [Second]: " << closest_gate.second << std::endl;
 
-    vec_separation += -closest_gate.first;
+    double closest_gp_dist = perception.obstacles.closest.norm();
+    vec_separation += - perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist);
+
+    
+    // Eigen::Vector3d closest_dir = perception.obstacles.closest.normalized();
+
+    // // base separation from the obstacle (original)
+    // vec_separation += - closest_dir / (closest_gp_dist * closest_gp_dist);
+
+    // // add a small perpendicular component
+    // Eigen::Vector3d perp = closest_dir.cross(Eigen::Vector3d::UnitZ());
+    // if (perp.squaredNorm() < 1e-8) {
+    //   perp = closest_dir.cross(Eigen::Vector3d::UnitY());
+    // }
+    // perp.normalize();
+
+    // const double perp_strength = user_params.param9; // small weight for the perpendicular push
+    // // vec_separation +=  - perp * (perp_strength / (closest_gp_dist * closest_gp_dist));
+    // vec_separation +=  - perp * (perp_strength);
+    
 
     //  the gate for the direction:
-    unsigned int gate_in_direction_idx = selectGateInDirection(UP, perception.obstacles);
+    unsigned int gate_in_direction_idx = selectGateInDirection(selected_gate_dir, perception.obstacles);
     auto         gate_in_direction     = perception.obstacles.gates[gate_in_direction_idx];
 
+    vec_navigation = gate_in_direction.first + gate_in_direction.second; // Forces to the gate edges for crossing
+   
+    
+    double min_gate_norm = std::min(gate_in_direction.first.norm(), gate_in_direction.second.norm());
+    action_handlers.shareVariables(_state_, _navigation_direction_, min_gate_norm);
+
+    // std::cout << "[Debug] MY cloesest distance is " << min_gate_norm << std::endl;
+    // std::cout << "[Debug] NEGHBOURS distances are " << perception.neighbors[0].shared_variables.dbl
+    // <<" m, and " <<   perception.neighbors[1].shared_variables.dbl << " m." << std::endl;
+
+    vec_navigation = vec_navigation.normalized() / (min_gate_norm * min_gate_norm);
+    vec_cohesion = (vec_cohesion / perception.neighbors.size());
+    // vec_separation *= param2;
+
     // | ---------------------- weight forces --------------------- |
-    vec_navigation *= param1;
-    vec_separation *= param2;
-    vec_cohesion = (vec_cohesion * param3 / perception.neighbors.size());
+    // Turn of some forces in case of:
+    if (collision_risk) {
+      std::cout << "[COLLISON RISK!!!!] ❌❌ Setting nav and cohesion forces to zero " << std::endl;
+      vec_navigation = Eigen::Vector3d::Zero();
+      vec_cohesion = Eigen::Vector3d::Zero();
+    } else if(get_closer){
+      std::cout << "[Feeling lonley] 😭😭 Setting nav force to zero " << std::endl;
+      vec_navigation = Eigen::Vector3d::Zero();
+    }
+    
+   
+    // vec_cohesion = (vec_cohesion * param3 / perception.neighbors.size());
 
     // | ------------------- sum the subvectors ------------------- |
-    vec_action = vec_navigation + vec_separation + vec_cohesion;
+    vec_action = vec_navigation * param1 + vec_separation * param2 + vec_cohesion * param3;
     // JUst Testing, REMOVE THIS LOGIC
     // if (int1 != 0){
       
@@ -220,17 +290,31 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     //   action_handlers.shareVariables(1, _navigation_direction_, 3.1415);
     // }
     
-    printVector3d(vec_action, "Action:");
+
+    // printVector3d(vec_action, "Action:");
+
+    // std::cout << "[DEBUG] Current state: " << stateToString(_state_) << std::endl;
+
+    if (current_time - idling_time_init >= 20.0) {
+      _state_ = INIT_STATE;
+      idling_time_init = current_time;
+    }
+
 
     // | ------------------------ visualize ----------------------- |
-    action_handlers.visualizeArrow("separation", vec_separation, Color_t{1.0, 0.0, 0.0, 0.5});
-    action_handlers.visualizeArrow("cohesion", vec_cohesion, Color_t{0.0, 1.0, 0.0, 0.5});
-    action_handlers.visualizeArrow("navigation", vec_navigation, Color_t{0.0, 1.0, 1.0, 0.5});
-    action_handlers.visualizeArrow("G2_p", G2_p, Color_t{0.0, 0.0, 1.0, 0.5});
-    action_handlers.visualizeArrow("G2_n", G2_n, Color_t{0.0, 0.0, 1.0, 0.5});
+    action_handlers.visualizeArrow("separation", vec_separation, Color_t{1.0, 0.0, 0.0, 0.5});        // red
+    action_handlers.visualizeArrow("cohesion", vec_cohesion, Color_t{0.0, 1.0, 0.0, 0.5});            // green
+    // action_handlers.visualizeArrow("navigation", vec_navigation, Color_t{0.0, 1.0, 1.0, 0.5});     // cyan
+
+    action_handlers.visualizeArrow("G_p", gate_in_direction.first, Color_t{0.0, 0.0, 1.0, 0.5});      // blue
+    action_handlers.visualizeArrow("G_n", gate_in_direction.second, Color_t{0.0, 0.0, 1.0, 0.5});     // blue
+
+    action_handlers.visualizeArrow("closest_gp", -perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist), Color_t{1.0, 0.0, 1.0, 0.5});
+    // action_handlers.visualizeArrow("perp_vec", -perp * (perp_strength / (closest_gp_dist * closest_gp_dist)), Color_t{1.0, 1.0, 0.0, 0.5});
   } // end compute action 
 
-  action_handlers.visualizeArrow("target", perception.target_vector * 10.0, Color_t{1.0, 1.0, 1.0, 0.5});
+  action_handlers.visualizeArrow("target", perception.target_vector * 5.0, Color_t{1.0, 1.0, 1.0, 0.5});
+  
   action_handlers.visualizeArrow("action", vec_action, Color_t{0.0, 0.0, 0.0, 1.0});
 
   // | -------------------- EXAMPLE CODE END -------------------- |

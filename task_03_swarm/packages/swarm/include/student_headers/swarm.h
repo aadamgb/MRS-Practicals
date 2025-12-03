@@ -74,8 +74,9 @@ private:
   double idling_time_init;
 
   // Constant variables: just an example, feel free to change them
-  const double SAFETY_DISTANCE_UAVS  = 2.0;
-  const double DESIRED_DISTANCE_UAVS = 3.0;
+  const double SAFETY_DISTANCE_UAVS  = 0.5;
+  const double DESIRED_DISTANCE_UAVS = 1.5;
+  const double MAX_MUTUAL_DISTANCE = 7.0;
 
   // | ------------- SHOULD NOT NEED TO MODIFY BELOW ------------ |
 

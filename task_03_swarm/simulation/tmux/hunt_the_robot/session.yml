@@ -10,7 +10,7 @@ windows:
   - gazebo:
       layout: tiled
       panes:
-        - waitForRos; roslaunch task_03_gazebo_resources simulation.launch gui:=true
+        - waitForRos; roslaunch task_03_gazebo_resources simulation.launch gui:=false
         - export UAV_NAME="uav1"; waitForOdometry; gz camera -c gzclient_camera -f uav1
   - spawn:
       layout: tiled
@@ -53,10 +53,10 @@ windows:
         - export UAV_NAME="uav1"; waitForSimulation; roslaunch task_03_wrapper automatic_start.launch
         - export UAV_NAME="uav2"; waitForSimulation; roslaunch task_03_wrapper automatic_start.launch
         - export UAV_NAME="uav3"; waitForSimulation; roslaunch task_03_wrapper automatic_start.launch
-  # - collision_checker:
-  #     layout: tiled
-  #     panes:
-  #       - waitForRos; roslaunch task_03_wrapper collision_checker.launch
+  - collision_checker:
+      layout: tiled
+      panes:
+        - waitForRos; roslaunch task_03_wrapper collision_checker.launch
   - swarm:
       layout: tiled
       panes:
