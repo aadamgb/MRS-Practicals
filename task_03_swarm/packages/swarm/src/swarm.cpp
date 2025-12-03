@@ -20,6 +20,8 @@ namespace task_03_swarm
 void Swarm::init(const double visibility_radius) {
 
   _visibility_radius_ = visibility_radius;
+  prev_g1_norm_ = 5.0;
+  prev_g2_norm_ = 5.0;
 }
 
 //}
@@ -119,7 +121,7 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
     case AGREEING_ON_DIRECTION: {
 
-      std::cout << "Current state: " << stateToString(AGREEING_ON_DIRECTION) << std::endl;
+      // std::cout << "Current state: " << stateToString(AGREEING_ON_DIRECTION) << std::endl;
 
       if (_navigation_direction_ == NONE) {
         _navigation_direction_ = targetToDirection(perception.target_vector);
@@ -136,9 +138,9 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
       
 
-      std::cout << "[DEBUG] greed direction: " << directionToString(intToDirection(majority_idx)) 
-      << " by majority of " << majority_freq  << ".\n    " 
-      << "     My selected direction was: " << directionToString(_navigation_direction_) << std::endl;
+      // std::cout << "[DEBUG] greed direction: " << directionToString(intToDirection(majority_idx)) 
+      // << " by majority of " << majority_freq  << ".\n    " 
+      // << "     My selected direction was: " << directionToString(_navigation_direction_) << std::endl;
 
       bool direction_agreed = true;
 
@@ -193,40 +195,41 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     
 
     auto mutual_distances = computeMutualDistances(perception.neighbors);
-    std::cout << " ✈️✈️  Mutual distances: [";
+    // std::cout << " ✈️✈️  Mutual distances: [";
     for (size_t i = 0; i < mutual_distances.size(); i++) {
       if(mutual_distances[i] < MAX_MUTUAL_DISTANCE) {
         get_closer = false;
       } else {
         get_closer = true;
       }
-      std::cout << mutual_distances[i];
-      if (i < mutual_distances.size() - 1) std::cout << ", ";
+      // std::cout << mutual_distances[i];
+      // if (i < mutual_distances.size() - 1) std::cout << ", ";
     }
-    std::cout << "]" << std::endl;
+    // std::cout << "]" << std::endl;
 
     // | ----------------- Separate from obstacles ---------------- |
 
-    auto gates = perception.obstacles.gates;
+    // auto gates = perception.obstacles.gates;
 
     // You may access the gates relative to your body frame
-    Eigen::Vector3d G2_p = gates[1].first;
-    Eigen::Vector3d G2_n = gates[1].second;
+    // Eigen::Vector3d G2_p = gates[1].first;
+    // Eigen::Vector3d G2_n = gates[1].second;
 
-    // Or you may iterate over them
-    for (const auto &G : gates) {
-      const auto G_p = G.first;
-    }
+    // // Or you may iterate over them
+    // for (const auto &G : gates) {
+    //   const auto G_p = G.first;
+    // }
 
     // Or you may want to find:
     //  the closest gate:
-    unsigned int closest_gate_idx = selectGateClosest(perception.obstacles);
-    auto         closest_gate     = perception.obstacles.gates[closest_gate_idx];
+    // unsigned int closest_gate_idx = selectGateClosest(perception.obstacles);
+    // auto         closest_gate     = perception.obstacles.gates[closest_gate_idx];
 
     // std::cout << "Let's see [Fisrt]: " << closest_gate.first << std::endl;
     // std::cout << "Let's see [Second]: " << closest_gate.second << std::endl;
 
     double closest_gp_dist = perception.obstacles.closest.norm();
+    // if(closest_gp_dist < 0.2) collision_risk = true;
     vec_separation += - perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist);
 
     
@@ -252,6 +255,72 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     auto         gate_in_direction     = perception.obstacles.gates[gate_in_direction_idx];
 
     vec_navigation = gate_in_direction.first + gate_in_direction.second; // Forces to the gate edges for crossing
+    
+    double g1_norm = gate_in_direction.first.norm();
+    double g2_norm = gate_in_direction.second.norm();
+
+    static int gate_cross_counter = 0;
+
+    // static bool prev_initialized = false;
+
+    // if (!prev_initialized) {
+    //   // first iteration: initialize previous norms, do not count
+    //   prev_g1_norm = g1_norm;
+    //   prev_g2_norm = g2_norm;
+    //   prev_initialized = true;
+    // } else {
+      // check if BOTH norms increased by at least 5.0 since last iteration
+      if (abs(g1_norm - prev_g1_norm_) >= 5.0 && abs(g2_norm - prev_g2_norm_) >= 5.0) {
+      ++gate_cross_counter;
+      std::cout << "✅ TRUE, crossed: " << gate_cross_counter << " times. ✅" << std::endl;
+      }
+      // update stored norms for next iteration
+      prev_g1_norm_ = g1_norm;
+      prev_g2_norm_ = g2_norm;
+    // }
+
+    vec_navigation = gate_in_direction.first + gate_in_direction.second; // Forces to the gate edges for crossing
+
+    // static int gate_cross_counter = 0;
+    // const double eps = 1e-8;
+
+    // // choose reference axis based on gate index: 1=UP(0,1,0), 3=DOWN(0,-1,0), 2=LEFT(-1,0,0), 0=RIGHT(1,0,0)
+    // Eigen::Vector3d ref_axis = Eigen::Vector3d::UnitX(); // default RIGHT
+    // switch (gate_in_direction_idx) {
+    //   case 1: ref_axis = Eigen::Vector3d::UnitY(); break;      // UP
+    //   case 3: ref_axis = -Eigen::Vector3d::UnitY(); break;     // DOWN
+    //   case 2: ref_axis = -Eigen::Vector3d::UnitX(); break;     // LEFT
+    //   case 0: ref_axis = Eigen::Vector3d::UnitX(); break;      // RIGHT
+    //   default: ref_axis = Eigen::Vector3d::UnitX(); break;
+    // }
+
+    // double g1_norm = gate_in_direction.first.norm();
+    // double g2_norm = gate_in_direction.second.norm();
+
+    // // Only evaluate angles if both gate vectors are valid
+    // if (g1_norm > eps && g2_norm > eps) {
+    //   Eigen::Vector3d g1_dir = gate_in_direction.first.normalized();
+    //   Eigen::Vector3d g2_dir = gate_in_direction.second.normalized();
+
+    //   double d1 = g1_dir.dot(ref_axis);
+    //   double d2 = g2_dir.dot(ref_axis);
+
+    //   // Clamp dot products to valid domain for acos
+    //   d1 = std::max(-1.0, std::min(1.0, d1));
+    //   d2 = std::max(-1.0, std::min(1.0, d2));
+
+    //   double angle1 = std::acos(d1);
+    //   double angle2 = std::acos(d2);
+
+    //   const double threshold_rad = 85.0 * PI / 180.0;
+
+    //   if (angle1 > threshold_rad && angle2 > threshold_rad) {
+    //   gate_cross_counter++;
+    //   std::cout << "✅ TRUE, crossed: " << gate_cross_counter << " times. ✅" << std::endl;
+    //   }
+    // }
+
+
    
     
     double min_gate_norm = std::min(gate_in_direction.first.norm(), gate_in_direction.second.norm());
@@ -306,8 +375,10 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
     action_handlers.visualizeArrow("cohesion", vec_cohesion, Color_t{0.0, 1.0, 0.0, 0.5});            // green
     // action_handlers.visualizeArrow("navigation", vec_navigation, Color_t{0.0, 1.0, 1.0, 0.5});     // cyan
 
-    action_handlers.visualizeArrow("G_p", gate_in_direction.first, Color_t{0.0, 0.0, 1.0, 0.5});      // blue
-    action_handlers.visualizeArrow("G_n", gate_in_direction.second, Color_t{0.0, 0.0, 1.0, 0.5});     // blue
+    action_handlers.visualizeArrow("G_p", gate_in_direction.first, Color_t{0.0, 0.0, 1.0, 0.2});      // blue
+    action_handlers.visualizeArrow("G_n", gate_in_direction.second, Color_t{0.0, 0.0, 1.0, 0.2});     // blue
+    
+    // action_handlers.visualizeArrow("G", (gate_in_direction.first + gate_in_direction.second) / 2.0, Color_t{0.0, 0.0, 1.0, 0.2});     // blue
 
     action_handlers.visualizeArrow("closest_gp", -perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist), Color_t{1.0, 0.0, 1.0, 0.5});
     // action_handlers.visualizeArrow("perp_vec", -perp * (perp_strength / (closest_gp_dist * closest_gp_dist)), Color_t{1.0, 1.0, 0.0, 0.5});
@@ -371,7 +442,7 @@ Direction_t Swarm::targetToDirection(const Eigen::Vector3d &target_vector) {
   double y = target_vector.y();
 
   double angle  = atan2(y,x);
-  std::cout << "[ANGLE] The angle is: " << angle * 180.0 / PI << " deg" << std::endl;
+  // std::cout << "[ANGLE] The angle is: " << angle * 180.0 / PI << " deg" << std::endl;
 
   if (-PI/4.0 < angle && angle <= PI/4.0) {
     // - 45 deg to + 45 deg -> go RIGHT
