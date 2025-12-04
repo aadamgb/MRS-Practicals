@@ -3,13 +3,6 @@
 namespace task_03_boids
 {
 
-// | ---------- HERE YOU MAY WRITE YOUR OWN FUNCTIONS --------- |
-
-// Example function, can be deleted
-double multiply(const double a, const double b) {
-  return a * b;
-}
-
 // | ------------- FILL COMPULSORY FUNCTIONS BELOW ------------ |
 
 /* updateAgentState() //{ */
@@ -53,15 +46,9 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
   Eigen::Vector3d f_s  = Eigen::Vector3d::Zero();  // Separation
   int n_neighbours =  state.neighbors_states.size();
 
-  // Hard safety collision limits
+  // Safety collision limits
   const double MIN_DIST_LIMIT = 0.3;
-  const double SAFETY_BUFFER = 0.05; 
   bool collision_risk = false;
-  
-  // Call custom functions, e.g., useful for dynamic weighting
-  [[maybe_unused]] double x = multiply(5.0, 10.0);
-
-  // Access my own prob. distribution of colors
   Distribution my_distribution = state.distribution;
   int          dim             = my_distribution.dim();
 
@@ -73,7 +60,7 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
     double n_dist = n_pos_rel.norm();
     if (n_dist < 0.01) n_dist = 0.01; // safety measure; prevent dividing by zero
 
-    if (n_dist < (MIN_DIST_LIMIT + SAFETY_BUFFER)) {
+    if (n_dist < MIN_DIST_LIMIT) {
       // collision risk, only take into account f_s
       collision_risk = true;
       // separation force proportional to 1/x^2
@@ -81,29 +68,20 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
     }
 
     if(!collision_risk){
-      // No collision risk
       f_a +=   n_vel_global;
       f_c +=   n_pos_rel;
       f_s += - n_pos_rel.normalized() / n_dist;
     }
-
-    // check if the size of my prob. distribution matches the size of the neighbour's distribution
-    if (dim != n_distribution.dim()) {
-      std::cout << "This should never happen. If it did, you set the previous distribution wrongly." << std::endl;
-    }
-
-    // Adding neighbours distributions to my distribution
+    
     for (int i = 0; i < 4; i++){
-      my_distribution.add(i, n_distribution.get(i));
+      my_distribution.add(i, n_distribution.get(i)); // Adding neighbours distributions to my distribution
     }
-
   }
 
   // | ----------- BOIDS ACTIONS CALCULATIONS ------------------- |
   if (collision_risk){
-    // Only take into account the separation force saturate it to max v change
-    action = f_s * 500.0;
-
+    // saturate separation
+    action = f_s * 500.0; 
   } else if (n_neighbours > 0) {
     // Nominal case
     f_a.normalize();
@@ -111,7 +89,7 @@ std::tuple<Eigen::Vector3d, Distribution> Boids::updateAgentState(const AgentSta
     action = (f_a * user_params.param1 + f_c * user_params.param2 + f_s * user_params.param3) + target * user_params.param9;
 
   } else {
-    // No neighbours, just go for the target
+    // No neighbours case, just go for the target
     action = target * user_params.param9;
   }
 

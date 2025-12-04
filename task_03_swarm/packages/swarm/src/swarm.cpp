@@ -19,9 +19,8 @@ namespace task_03_swarm
  */
 void Swarm::init(const double visibility_radius) {
 
-  _visibility_radius_ = visibility_radius;
-  prev_g1_norm_ = 5.0;
-  prev_g2_norm_ = 5.0;
+  _visibility_radius_ = visibility_radius; 
+
 }
 
 //}
@@ -67,10 +66,8 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
   // Access the perception struct
   double          current_time    = perception.time;
-  // Eigen::Vector3d vec_navigation  = perception.target_vector;
-  Eigen::Vector3d vec_navigation  = Eigen::Vector3d::Zero();
 
-  // Eigen::Vector3d vec_alignment   = Eigen::Vector3d::Zero();
+  Eigen::Vector3d vec_navigation  = Eigen::Vector3d::Zero();
   Eigen::Vector3d vec_cohesion    = Eigen::Vector3d::Zero();
   Eigen::Vector3d vec_separation  = Eigen::Vector3d::Zero();
 
@@ -91,26 +88,9 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
     case INIT_STATE: {
 
-      std::cout << "Current state: " << stateToString(INIT_STATE) << std::endl;
-
-      std::cout << "Changing to state: " << stateToString(AGREEING_ON_DIRECTION) << std::endl;
       _state_          = AGREEING_ON_DIRECTION;
       idling_time_init = current_time;
-
-      // You may share three variables to all other agents (beware, the network is asynchronous and UDP-based: no message is assured to reach all the others)
-      // CPP enum values are represented by integers by default in ascending order. You may hence send your own state to others like this:
-      action_handlers.shareVariables(INIT_STATE, 0, 0.0);
-
-      // We have prepared two basic enums for you: State_t defined in student_headers/swarm.h and task_03_common/Direction_t in direction.h.
-      // You may share both and add a double value, e.g.:
       _navigation_direction_ = NONE;
-      action_handlers.shareVariables(INIT_STATE, _navigation_direction_, 3.1415);
-
-      // The values of others can be accessed like this:
-      // SharedVariables_t n_0_shared_vars = perception.neighbors[0].shared_variables;
-      // int a = n_0_shared_vars.int1;
-      // int b = n_0_shared_vars.int2;
-      // double c = n_0_shared_vars.dbl;
 
       break;
     }
@@ -121,11 +101,9 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
 
     case AGREEING_ON_DIRECTION: {
 
-      // std::cout << "Current state: " << stateToString(AGREEING_ON_DIRECTION) << std::endl;
-
       if (_navigation_direction_ == NONE) {
         _navigation_direction_ = targetToDirection(perception.target_vector);
-        action_handlers.shareVariables(_state_, _navigation_direction_, 3.1415);
+        action_handlers.shareVariables(_state_, _navigation_direction_, 10.0);
       }
 
       // Compute majority
@@ -134,13 +112,7 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
       directions.push_back(perception.neighbors[1].shared_variables.int2);
 
       auto             counts                                    = countIntegers(directions);
-      [[maybe_unused]] const auto &[majority_idx, majority_freq] = getMajority(counts);
-
-      
-
-      // std::cout << "[DEBUG] greed direction: " << directionToString(intToDirection(majority_idx)) 
-      // << " by majority of " << majority_freq  << ".\n    " 
-      // << "     My selected direction was: " << directionToString(_navigation_direction_) << std::endl;
+      const auto &[majority_idx, majority_freq] = getMajority(counts);
 
       bool direction_agreed = true;
 
@@ -158,30 +130,24 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
   // STATE MACHINE END
 
   if (compute_action) {
-    // int int1;
     double closest_n_dist = std::numeric_limits<double>::max();
     bool collision_risk = false;
     bool get_closer = false; 
 
     // | --------------- Separate from other agents --------------- |
-
     for (const auto &n : perception.neighbors) {
       Eigen::Vector3d n_pos  = n.position;
       double          n_dist = n_pos.norm();
-      //  int1 = n.shared_variables.int1;
-      // std::cout << "Int 1: " << int1 << std::endl;
 
-      vec_cohesion += n_pos;
+      vec_cohesion += n_pos; // coheison force
 
-      // You may want to use the weighting function you should have prepared first
-      bool   weight_defined;
-      double weight;
+      bool   weight_defined;      double weight;
       std::tie(weight_defined, weight) = weightingFunction(n_dist, _visibility_radius_, SAFETY_DISTANCE_UAVS, DESIRED_DISTANCE_UAVS);
 
       if (weight_defined) {
         vec_separation += -n_pos * weight;
       } else {
-        vec_separation += -1000.0 * n_pos; // Saturate separation force
+        vec_separation += -100000.0 * n_pos; // Saturate separation force
       }
 
       closest_n_dist = std::min(closest_n_dist, n_dist);
@@ -193,199 +159,69 @@ Eigen::Vector3d Swarm::updateAction(const Perception_t &perception, const UserPa
       collision_risk = false;
     }
     
-
     auto mutual_distances = computeMutualDistances(perception.neighbors);
-    // std::cout << " ✈️✈️  Mutual distances: [";
     for (size_t i = 0; i < mutual_distances.size(); i++) {
       if(mutual_distances[i] < MAX_MUTUAL_DISTANCE) {
         get_closer = false;
       } else {
         get_closer = true;
       }
-      // std::cout << mutual_distances[i];
-      // if (i < mutual_distances.size() - 1) std::cout << ", ";
     }
-    // std::cout << "]" << std::endl;
 
     // | ----------------- Separate from obstacles ---------------- |
-
-    // auto gates = perception.obstacles.gates;
-
-    // You may access the gates relative to your body frame
-    // Eigen::Vector3d G2_p = gates[1].first;
-    // Eigen::Vector3d G2_n = gates[1].second;
-
-    // // Or you may iterate over them
-    // for (const auto &G : gates) {
-    //   const auto G_p = G.first;
-    // }
-
-    // Or you may want to find:
-    //  the closest gate:
-    // unsigned int closest_gate_idx = selectGateClosest(perception.obstacles);
-    // auto         closest_gate     = perception.obstacles.gates[closest_gate_idx];
-
-    // std::cout << "Let's see [Fisrt]: " << closest_gate.first << std::endl;
-    // std::cout << "Let's see [Second]: " << closest_gate.second << std::endl;
-
     double closest_gp_dist = perception.obstacles.closest.norm();
-    // if(closest_gp_dist < 0.2) collision_risk = true;
-    vec_separation += - perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist);
-
-    
-    // Eigen::Vector3d closest_dir = perception.obstacles.closest.normalized();
-
-    // // base separation from the obstacle (original)
-    // vec_separation += - closest_dir / (closest_gp_dist * closest_gp_dist);
-
-    // // add a small perpendicular component
-    // Eigen::Vector3d perp = closest_dir.cross(Eigen::Vector3d::UnitZ());
-    // if (perp.squaredNorm() < 1e-8) {
-    //   perp = closest_dir.cross(Eigen::Vector3d::UnitY());
-    // }
-    // perp.normalize();
-
-    // const double perp_strength = user_params.param9; // small weight for the perpendicular push
-    // // vec_separation +=  - perp * (perp_strength / (closest_gp_dist * closest_gp_dist));
-    // vec_separation +=  - perp * (perp_strength);
-    
-
-    //  the gate for the direction:
     unsigned int gate_in_direction_idx = selectGateInDirection(selected_gate_dir, perception.obstacles);
     auto         gate_in_direction     = perception.obstacles.gates[gate_in_direction_idx];
 
-    vec_navigation = gate_in_direction.first + gate_in_direction.second; // Forces to the gate edges for crossing
-    
-    double g1_norm = gate_in_direction.first.norm();
-    double g2_norm = gate_in_direction.second.norm();
-
-    static int gate_cross_counter = 0;
-
-    // static bool prev_initialized = false;
-
-    // if (!prev_initialized) {
-    //   // first iteration: initialize previous norms, do not count
-    //   prev_g1_norm = g1_norm;
-    //   prev_g2_norm = g2_norm;
-    //   prev_initialized = true;
-    // } else {
-      // check if BOTH norms increased by at least 5.0 since last iteration
-      if (abs(g1_norm - prev_g1_norm_) >= 5.0 && abs(g2_norm - prev_g2_norm_) >= 5.0) {
-      ++gate_cross_counter;
-      std::cout << "✅ TRUE, crossed: " << gate_cross_counter << " times. ✅" << std::endl;
-      }
-      // update stored norms for next iteration
-      prev_g1_norm_ = g1_norm;
-      prev_g2_norm_ = g2_norm;
-    // }
-
-    vec_navigation = gate_in_direction.first + gate_in_direction.second; // Forces to the gate edges for crossing
-    // static int gate_cross_counter = 0;
-    // const double eps = 1e-8;
-
-    // // choose reference axis based on gate index: 1=UP(0,1,0), 3=DOWN(0,-1,0), 2=LEFT(-1,0,0), 0=RIGHT(1,0,0)
-    // Eigen::Vector3d ref_axis = Eigen::Vector3d::UnitX(); // default RIGHT
-    // switch (gate_in_direction_idx) {
-    //   case 1: ref_axis = Eigen::Vector3d::UnitY(); break;      // UP
-    //   case 3: ref_axis = -Eigen::Vector3d::UnitY(); break;     // DOWN
-    //   case 2: ref_axis = -Eigen::Vector3d::UnitX(); break;     // LEFT
-    //   case 0: ref_axis = Eigen::Vector3d::UnitX(); break;      // RIGHT
-    //   default: ref_axis = Eigen::Vector3d::UnitX(); break;
-    // }
-
-    // double g1_norm = gate_in_direction.first.norm();
-    // double g2_norm = gate_in_direction.second.norm();
-
-    // // Only evaluate angles if both gate vectors are valid
-    // if (g1_norm > eps && g2_norm > eps) {
-    //   Eigen::Vector3d g1_dir = gate_in_direction.first.normalized();
-    //   Eigen::Vector3d g2_dir = gate_in_direction.second.normalized();
-
-    //   double d1 = g1_dir.dot(ref_axis);
-    //   double d2 = g2_dir.dot(ref_axis);
-
-    //   // Clamp dot products to valid domain for acos
-    //   d1 = std::max(-1.0, std::min(1.0, d1));
-    //   d2 = std::max(-1.0, std::min(1.0, d2));
-
-    //   double angle1 = std::acos(d1);
-    //   double angle2 = std::acos(d2);
-
-    //   const double threshold_rad = 85.0 * PI / 180.0;
-
-    //   if (angle1 > threshold_rad && angle2 > threshold_rad) {
-    //   gate_cross_counter++;
-    //   std::cout << "✅ TRUE, crossed: " << gate_cross_counter << " times. ✅" << std::endl;
-    //   }
-    // }
-
-
-   
-    
-    // double min_gate_norm = std::min(gate_in_direction.first.norm(), gate_in_direction.second.norm());
-    double gate_dist = ((gate_in_direction.first + gate_in_direction.second)/2.0).norm();
+    double gate_dist = ((gate_in_direction.first + gate_in_direction.second) / 2.0).norm();
     action_handlers.shareVariables(_state_, _navigation_direction_, gate_dist);
 
-    // compute minimum among gate_dist and the two neighbors' dbl values
+    // compute minimum gate_distance between all uavs
     double min_val = std::min({gate_dist,
                    perception.neighbors[0].shared_variables.dbl,
                    perception.neighbors[1].shared_variables.dbl});
 
-    // std::cout << "🔎 gate_dist: " << gate_dist
-    //       << " | neighbor0.dbl: " << perception.neighbors[0].shared_variables.dbl
-    //       << " | neighbor1.dbl: " << perception.neighbors[1].shared_variables.dbl
-    //       << " | min_val: " << min_val
-    //       << std::endl;
-
-    // std::cout << "[Debug] MY cloesest distance is " << min_gate_norm << std::endl;
-    // std::cout << "[Debug] NEGHBOURS distances are " << perception.neighbors[0].shared_variables.dbl
-    // <<" m, and " <<   perception.neighbors[1].shared_variables.dbl << " m." << std::endl;
+    vec_navigation = gate_in_direction.first + gate_in_direction.second; 
 
     vec_navigation = vec_navigation.normalized() / (gate_dist * gate_dist);
     vec_cohesion = (vec_cohesion / perception.neighbors.size());
-    // vec_separation *= param2;
+    vec_separation += - perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist);
 
     // | ---------------------- weight forces --------------------- |
     // Turn of some forces in case of:
     if (collision_risk) {
-      std::cout << "[COLLISON RISK!!!!] ❌❌ Setting nav and cohesion forces to zero " << std::endl;
       vec_navigation = Eigen::Vector3d::Zero();
       vec_cohesion = Eigen::Vector3d::Zero();
-    } else if(get_closer){
-      std::cout << "[Feeling lonley] 😭😭 Setting nav force to zero " << std::endl;
+      std::cout << "❌[COLLISON RISK]❌  Setting nav and cohesion forces to zero " << std::endl;
+    } 
+    
+    if(get_closer){
       vec_navigation = Eigen::Vector3d::Zero();
+      std::cout << "😭[Feeling lonley]😭  Setting nav force to zero " << std::endl;
     }
     
-   
 
     // | ------------------- sum the subvectors ------------------- |
-    vec_action = vec_navigation * param1 + vec_separation * param2 + vec_cohesion * param3;
+    vec_action = vec_navigation * param1 + vec_separation * param2 + vec_cohesion * param3 +  perception.target_vector * 0.15; // small target comonent added
 
-
-    if (current_time - idling_time_init >= 10.0 && min_val > 3.0) {
+    if (current_time - idling_time_init >= VOTING_TIME && min_val > 4.0) {
       _state_ = INIT_STATE;
       idling_time_init = current_time;
-      std::cout << "🗳️ VOTING!! Resetting to INIT_STATE 🔁" << std::endl;
-      action_handlers.shareVariables(INIT_STATE, _navigation_direction_, 0.0);
+      action_handlers.shareVariables(_state_, _navigation_direction_, gate_dist);
+      std::cout << "🗳️ VOTING!! Resetting to INIT_STATE" << std::endl;
     }
 
 
     // | ------------------------ visualize ----------------------- |
     action_handlers.visualizeArrow("separation", vec_separation, Color_t{1.0, 0.0, 0.0, 0.5});        // red
     action_handlers.visualizeArrow("cohesion", vec_cohesion, Color_t{0.0, 1.0, 0.0, 0.5});            // green
-    // action_handlers.visualizeArrow("navigation", vec_navigation, Color_t{0.0, 1.0, 1.0, 0.5});     // cyan
-
     action_handlers.visualizeArrow("G_p", gate_in_direction.first, Color_t{0.0, 0.0, 1.0, 0.2});      // blue
     action_handlers.visualizeArrow("G_n", gate_in_direction.second, Color_t{0.0, 0.0, 1.0, 0.2});     // blue
-    
-    // action_handlers.visualizeArrow("G", (gate_in_direction.first + gate_in_direction.second) / 2.0, Color_t{0.0, 0.0, 1.0, 0.2});     // blue
+    action_handlers.visualizeArrow("closest_gp", -perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist), Color_t{1.0, 0.0, 1.0, 0.5}); // purple
 
-    action_handlers.visualizeArrow("closest_gp", -perception.obstacles.closest.normalized() / (closest_gp_dist * closest_gp_dist), Color_t{1.0, 0.0, 1.0, 0.5});
-    // action_handlers.visualizeArrow("perp_vec", -perp * (perp_strength / (closest_gp_dist * closest_gp_dist)), Color_t{1.0, 1.0, 0.0, 0.5});
   } // end compute action 
 
-  action_handlers.visualizeArrow("target", perception.target_vector * 5.0, Color_t{1.0, 1.0, 1.0, 0.5});
-  
+  action_handlers.visualizeArrow("target", perception.target_vector * 2.0, Color_t{1.0, 1.0, 1.0, 0.5});
   action_handlers.visualizeArrow("action", vec_action, Color_t{0.0, 0.0, 0.0, 1.0});
 
   // | -------------------- EXAMPLE CODE END -------------------- |
@@ -462,37 +298,40 @@ Direction_t Swarm::targetToDirection(const Eigen::Vector3d &target_vector) {
 
 //}
 
-/* robotsInIdenticalStates() //{ */
+// /* robotsInIdenticalStates() //{ */
 
-bool Swarm::robotsInIdenticalStates(const Perception_t &perception) {
+// bool Swarm::robotsInIdenticalStates(const Perception_t &perception) {
 
-  // TODO: fill if want to use
-  std::cout << "[ERROR] robotsInIdenticalStates() not implemented. Returning false if there are any neighbors, true otherwise." << std::endl;
+//   // TODO: fill if want to use
+//   std::cout << "[ERROR] robotsInIdenticalStates() not implemented. Returning false if there are any neighbors, true otherwise." << std::endl;
 
-  for (unsigned int i = 0; i < perception.neighbors.size(); i++) {
-    return false;
-  }
+//   for (unsigned int i = 0; i < perception.neighbors.size(); i++) {
+//     return false;
+//   }
 
-  return true;
-}
+//   return true;
+// }
+
+// //}
+
+// /* anyRobotInState() //{ */
+
+// bool Swarm::anyRobotInState(const Perception_t &perception, const State_t &state) {
+
+//   // TODO: fill if want to use
+//   std::cout << "[ERROR] robotsInIdenticalStates() not implemented. Returning true if there are any neighbors, false otherwise." << std::endl;
+
+//   for (unsigned int i = 0; i < perception.neighbors.size(); i++) {
+//     return true;
+//   }
+
+//   return false;
+// }
 
 //}
 
-/* anyRobotInState() //{ */
 
-bool Swarm::anyRobotInState(const Perception_t &perception, const State_t &state) {
 
-  // TODO: fill if want to use
-  std::cout << "[ERROR] robotsInIdenticalStates() not implemented. Returning true if there are any neighbors, false otherwise." << std::endl;
-
-  for (unsigned int i = 0; i < perception.neighbors.size(); i++) {
-    return true;
-  }
-
-  return false;
-}
-
-//}
 
 // | ------------ Helper methods for data handling ------------ |
 
